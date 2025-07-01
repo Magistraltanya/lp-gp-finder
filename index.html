@@ -39,7 +39,7 @@
   .icon.del{color:#b60000}
   /* ---- OVERLAY / TOAST ---- */
   #overlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(255,255,255,.55);z-index:300}
-  .spinner{width:44px;height:44px;border:5px solid rgba(0,0,0,.12);border-top-color:var(--teal);border-radius:50%;animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+  .spinner{width:44px;height:44px;border:5px solid rgba(0,0,0,.12);border-top-color:var(--teal);border-radius:50%;animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)} }
   #toast{position:fixed;top:22px;right:24px;z-index:600}
   .toast{padding:11px 17px;border-radius:8px;color:#fff;font-weight:600;margin-bottom:10px;box-shadow:var(--shadow);opacity:0;transform:translateY(-10px);transition:.3s}
   .toast.show{opacity:1;transform:none}.toast.ok{background:var(--teal)}.toast.err{background:#c0392b}
@@ -49,11 +49,15 @@
   .modal-box h3{font-size:18px;font-weight:700;margin-bottom:14px;color:var(--blue)}
   .modal-box table{width:100%;border-collapse:collapse;font-size:14px}
   .modal-box th,.modal-box td{padding:8px 10px;border-bottom:1px solid var(--border)}
-  #col-list li{display:flex;align-items:center;gap:6px;margin-bottom:6px}
-  .manage-btn{margin-bottom:10px}
+  /* Configure‑columns grid for perfect alignment */
+  #col-list{display:grid;grid-template-columns:auto 1fr;column-gap:8px;row-gap:6px;margin-top:6px}
+  #col-list input{margin:0}
   /* ---- QUICK FILTERS ---- */
-  .panel.quick-filters select{margin-bottom:10px}
   .panel.quick-filters label{display:block;font-size:13px;margin-bottom:4px;color:#344454}
+  .panel.quick-filters select{margin-bottom:12px;width:100%}
+  /* ---- MANAGE LIST BUTTONS ---- */
+  .panel.manage-list{display:flex;flex-direction:column;gap:10px}
+  .panel.manage-list .btn{width:100%}
   </style>
 </head>
 <body>
@@ -68,7 +72,7 @@
     <label for="q-country">Country</label><select id="q-country"><option value="">All</option></select>
     <label for="q-sector">Sector</label><select id="q-sector"><option value="">All</option></select>
     <label for="q-stage">Stage</label><select id="q-stage"><option value="">All</option></select>
-    <button id="q-clear" class="btn btn-sec" style="margin-top:6px">Clear</button>
+    <button id="q-clear" class="btn btn-sec">Clear</button>
   </div>
   <!-- AI DISCOVERY -->
   <div class="panel"><h2>AI Discovery</h2>
@@ -79,8 +83,8 @@
     <button id="ai-btn" class="btn btn-pri" style="margin-top:16px">✨ Find Investors</button>
   </div>
   <!-- MANAGE LIST -->
-  <div class="panel"><h2>Manage List</h2>
-    <label class="btn btn-sec manage-btn" for="file-in">Upload Excel/CSV</label><input type="file" id="file-in" accept=".xlsx,.xls,.csv" hidden />
+  <div class="panel manage-list"><h2>Manage List</h2>
+    <label class="btn btn-sec" for="file-in">Upload Excel/CSV</label><input type="file" id="file-in" accept=".xlsx,.xls,.csv" hidden />
     <button id="exp-btn" class="btn btn-sec">Export CSV</button>
   </div>
 </aside>
@@ -91,7 +95,7 @@
 </main>
 <div id="toast"></div>
 <!-- COLUMN MODAL -->
-<div class="modal" id="col-modal"><div class="modal-box" style="width:360px"><h3>Visible Columns</h3><ul id="col-list" style="list-style:none;padding-left:0;max-height:380px;overflow:auto"></ul><button class="btn btn-pri close" style="margin-top:14px;width:100%">Done</button></div></div>
+<div class="modal" id="col-modal"><div class="modal-box" style="width:360px"><h3>Visible Columns</h3><ul id="col-list"></ul><button class="btn btn-pri close" style="margin-top:14px;width:100%">Done</button></div></div>
 <!-- CONTACTS MODAL -->
 <div class="modal" id="ct-modal"><div class="modal-box"><h3 id="ct-title">Contacts</h3><table><thead><tr><th>Name</th><th>Designation</th><th>Email</th><th>LinkedIn</th></tr></thead><tbody id="ct-body"></tbody></table><button class="btn btn-pri close" style="margin-top:16px;width:120px">Close</button></div></div>
 <script>
@@ -123,7 +127,7 @@ UI.search.addEventListener('input',render);
 [UI.qCountry,UI.qSector,UI.qStage].forEach(sel=>sel.addEventListener('change',render));
 $('#q-clear').addEventListener('click',()=>{UI.qCountry.value=UI.qSector.value=UI.qStage.value='';render();});
 /* COLUMN MODAL */
-UI.colBtn.addEventListener('click',()=>{UI.colList.innerHTML='';COLS.forEach(c=>{if(c.key==='actions')return;const li=document.createElement('li');li.innerHTML=`<input type="checkbox" data-k="${c.key}" ${visible.has(c.key)?'checked':''}/> ${c.label}`;UI.colList.appendChild(li);});UI.colModal.style.display='flex';});
+UI.colBtn.addEventListener('click',()=>{UI.colList.innerHTML='';COLS.forEach(c=>{if(c.key==='actions')return;const li=document.createElement('li');li.innerHTML=`<input type="checkbox" data-k="${c.key}" ${visible.has(c.key)?'checked':''}/> <span>${c.label}</span>`;UI.colList.appendChild(li);});UI.colModal.style.display='flex';});
 UI.colModal.addEventListener('click',e=>{if(e.target===UI.colModal||e.target.classList.contains('close'))UI.colModal.style.display='none';});
 UI.colList.addEventListener('change',e=>{const k=e.target.dataset.k;e.target.checked?visible.add(k):visible.delete(k);render();});
 /* CONTACT & DELETE */
