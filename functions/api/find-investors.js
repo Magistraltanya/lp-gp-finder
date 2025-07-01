@@ -111,27 +111,11 @@ const gJson = await gRes.json();
 const raw   = gJson?.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
 
 
-    /* ── 4 ▸ Ensure table ───────────────────────────────────────────── */
-await DB.exec(`
-  CREATE TABLE IF NOT EXISTS firms (
-    id                INTEGER PRIMARY KEY AUTOINCREMENT,
-    website           TEXT UNIQUE,
-    firm_name         TEXT,
-    entity_type       TEXT,
-    sub_type          TEXT,
-    address           TEXT,
-    country           TEXT,
-    company_linkedin  TEXT,
-    about             TEXT,
-    investment_strategy TEXT,
-    sector            TEXT,
-    sector_details    TEXT,
-    stage             TEXT,
-    source            TEXT,
-    validated         INTEGER DEFAULT 0,
-    created_at        DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-`);                    //  ← the semicolon is now **inside** the string
+  /* ── 4 ▸ Ensure table ─────────────────────────────────────────── */
+await DB.exec(
+  `CREATE TABLE IF NOT EXISTS firms(id INTEGER PRIMARY KEY AUTOINCREMENT,website TEXT UNIQUE,firm_name TEXT,entity_type TEXT,sub_type TEXT,address TEXT,country TEXT,company_linkedin TEXT,about TEXT,investment_strategy TEXT,sector TEXT,sector_details TEXT,stage TEXT,source TEXT,validated INTEGER DEFAULT 0,created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`
+);
+
 
     /* ── 5 ▸ Insert & dedupe —–––––––––––––––––––––––––––––––––––– */
     let added = 0;
