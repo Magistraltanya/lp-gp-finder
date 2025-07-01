@@ -11,24 +11,17 @@
 <!-- ───────── VISUAL DESIGN (Magistral brand) ───────── -->
 <style>
 :root{
-  --blue:#003366;           /* brand navy */
-  --teal:#009999;           /* accent */
-  --gold:#F2A900;           /* highlight */
-  --grey:#6C7A89;           /* neutral */
-  --bg:#f5f7fa;             /* page background */
-  --white:#ffffff;
-  --border:#dbe1e8;
-  --font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --blue:#003366; --teal:#009999; --gold:#F2A900; --grey:#6C7A89;
+  --bg:#f5f7fa; --white:#ffffff; --border:#dbe1e8;
+  --font:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
   --shadow:0 1px 4px rgba(0,0,0,.08);
 }
 *{box-sizing:border-box;margin:0;padding:0}
-html{scroll-behavior:smooth}
-body{display:flex;min-height:100vh;background:var(--bg);font-family:var(--font);color:#212529;line-height:1.4}
+body{min-height:100vh;display:flex;background:var(--bg);font-family:var(--font);color:#1f2d3d;line-height:1.45}
 
-/********  LAYOUT  *********/
+/* ---- layout ---- */
 .sidebar{flex:0 0 300px;background:var(--white);border-right:1px solid var(--border);padding:24px;display:flex;flex-direction:column;gap:28px}
-.main   {flex:1;padding:24px;display:flex;flex-direction:column;position:relative}
-
+.main{flex:1;padding:24px;display:flex;flex-direction:column;position:relative}
 .panel{background:var(--white);border:1px solid var(--border);border-radius:10px;padding:22px;box-shadow:var(--shadow)}
 .panel h2{font-size:20px;margin-bottom:14px;border-bottom:1px solid var(--border);padding-bottom:10px;color:var(--blue);font-weight:700}
 
@@ -37,158 +30,189 @@ input:focus,select:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 
 
 .btn{display:block;width:100%;padding:11px 14px;margin-bottom:14px;font-size:14px;font-weight:600;border:none;border-radius:6px;cursor:pointer;transition:.2s ease;font-family:var(--font)}
 .btn-primary{background:var(--teal);color:#fff}.btn-primary:hover{background:#008383}
-.btn-grey   {background:var(--grey);color:#fff}.btn-grey:hover{background:#5b6978}
-.btn-gold   {background:var(--gold);color:#000}.btn-gold:hover{filter:brightness(.92)}
+.btn-grey{background:var(--grey);color:#fff}.btn-grey:hover{background:#5b6978}
 .btn[disabled]{opacity:.55;cursor:not-allowed}
 
-/********  VIEW TOGGLES  *********/
+/* ---- filters ---- */
 .filter-buttons{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
 .filter-buttons .btn{margin:0;padding:9px 0;font-size:13px;background:#e9edf2;color:#222}
 .filter-buttons .active{background:var(--blue);color:#fff}
 
-/********  DATATABLE  *********/
+/* ---- table ---- */
 .table-wrap{flex:1;margin-top:18px;border:1px solid var(--border);border-radius:10px;background:var(--white);overflow:auto;box-shadow:var(--shadow)}
-.table-wrap table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:13px}
+.table-wrap table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:13px;min-width:860px}
 th,td{padding:10px 12px;border-bottom:1px solid var(--border);white-space:nowrap;text-overflow:ellipsis;overflow:hidden;vertical-align:middle}
 th{background:var(--bg);color:var(--blue);font-weight:600;text-transform:uppercase;position:sticky;top:0;z-index:3;cursor:pointer}
 tr:nth-child(even){background:#fafbfc}
-.row-new{background:#fffce6}
+.row-new{background:#fffbe6}
 
-/********  ICON ACTIONS  *********/
+/* quick unwrap on dbl‑click */
+.unwrap{white-space:normal!important;overflow:visible!important}
+
+/* ---- actions ---- */
 .action{background:none;border:none;padding:0 5px;font-size:16px;cursor:pointer;color:var(--blue);transition:.15s}
 .action:hover{color:var(--gold)}
 
-/********  TOAST  *********/
+/* ---- toast ---- */
 #toast{position:fixed;top:22px;right:24px;z-index:5000}
 .toast{padding:13px 20px;border-radius:8px;margin-bottom:10px;color:#fff;font-weight:600;box-shadow:var(--shadow);opacity:0;transform:translateY(-18px);transition:.3s}
 .toast.show{opacity:1;transform:none}
-.toast.ok {background:var(--teal)}
-.toast.err{background:#c0392b}
+.toast.ok{background:var(--teal)}.toast.err{background:#c0392b}
 
-/********  OVERLAY  *********/
+/* ---- overlay ---- */
 #overlay{position:absolute;inset:0;background:rgba(255,255,255,.65);display:none;align-items:center;justify-content:center;z-index:300}
 .spinner{width:42px;height:42px;border:5px solid rgba(0,0,0,.1);border-top-color:var(--teal);border-radius:50%;animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
 
-/********  MODAL  *********/
+/* ---- modal ---- */
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:4000}
 .modal-inner{background:#fff;border-radius:10px;padding:26px;max-height:80vh;overflow:auto;min-width:300px;box-shadow:var(--shadow)}
 .modal h3{margin-top:0;color:var(--blue)}
 
-/********  COLUMN CHECKBOX GRID  *********/
-#col-list label{display:flex;align-items:center;gap:6px;margin-bottom:6px;font-size:14px}
+/* column checklist */
+#col-list{columns:2 220px}
+#col-list label{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:14px}
 #col-list input{width:16px;height:16px;margin:0;accent-color:var(--teal)}
 
-/* ------ responsive (small screens) ------ */
-@media(max-width:850px){body{flex-direction:column}.sidebar{flex:0 0 auto;width:100%;border-right:none;border-bottom:1px solid var(--border);flex-wrap:wrap}}
+@media(max-width:850px){body{flex-direction:column}.sidebar{width:100%;border-right:none;border-bottom:1px solid var(--border);flex-wrap:wrap}}
 </style>
 </head>
 <body>
-  <aside class="sidebar">
-    <!-- View panel -->
-    <div class="panel">
-      <h2>View</h2>
-      <div class="filter-buttons">
-        <button class="btn active" data-filter="All">All</button>
-        <button class="btn" data-filter="LP">LPs</button>
-        <button class="btn" data-filter="GP">GPs</button>
-        <button class="btn" data-filter="Broker">Brokers</button>
-        <button class="btn" data-filter="Other">Others</button>
-      </div>
-      <button id="col-btn" class="btn btn-grey">Configure Columns</button>
+<aside class="sidebar">
+  <!-- View -->
+  <div class="panel">
+    <h2>View</h2>
+    <div class="filter-buttons">
+      <button class="btn active" data-filter="All">All</button>
+      <button class="btn" data-filter="LP">LPs</button>
+      <button class="btn" data-filter="GP">GPs</button>
+      <button class="btn" data-filter="Broker">Brokers</button>
+      <button class="btn" data-filter="Other">Others</button>
     </div>
+    <button id="col-btn" class="btn btn-grey">Configure Columns</button>
+  </div>
 
-    <!-- AI Discovery -->
-    <div class="panel">
-      <h2>AI Discovery</h2>
-      <label>Entity Type</label>
-      <select id="ai-type"><option>LP</option><option>GP</option><option>Broker</option><option>Other</option></select>
-      <label style="margin-top:12px">Specific Type</label>
-      <input id="ai-sub" placeholder="Family Office">
-      <label style="margin-top:12px">Sector</label>
-      <input id="ai-sec" placeholder="Health Care">
-      <label style="margin-top:12px">Geography</label>
-      <input id="ai-geo" placeholder="USA">
-      <button id="ai-btn" class="btn btn-primary" style="margin-top:15px">✨ Find Investors</button>
-    </div>
+  <!-- AI Discovery -->
+  <div class="panel">
+    <h2>AI Discovery</h2>
+    <label>Entity Type</label>
+    <select id="ai-type"><option>LP</option><option>GP</option><option>Broker</option><option>Other</option></select>
+    <label style="margin-top:12px">Specific Type</label>
+    <input id="ai-sub" placeholder="Family Office">
+    <label style="margin-top:12px">Sector</label>
+    <input id="ai-sec" placeholder="Health Care">
+    <label style="margin-top:12px">Geography</label>
+    <input id="ai-geo" placeholder="USA">
+    <button id="ai-btn" class="btn btn-primary" style="margin-top:15px">✨ Find Investors</button>
+  </div>
 
-    <!-- Manage -->
-    <div class="panel">
-      <h2>Manage List</h2>
-      <label class="btn btn-grey" for="file-in">Upload Excel/CSV</label>
-      <input id="file-in" type="file" accept=".xlsx,.xls,.csv" style="display:none">
-      <button id="exp-btn" class="btn btn-grey">Export CSV</button>
-    </div>
-  </aside>
+  <!-- Manage -->
+  <div class="panel">
+    <h2>Manage List</h2>
+    <label class="btn btn-grey" for="file-in">Upload Excel/CSV</label>
+    <input id="file-in" type="file" accept=".xlsx,.xls,.csv" style="display:none">
+    <button id="exp-btn" class="btn btn-grey">Export CSV</button>
+  </div>
+</aside>
 
-  <!-- Main area -->
-  <main class="main">
-    <div id="overlay"><div class="spinner"></div></div>
-    <input id="search" type="text" placeholder="Search…" style="padding:11px 14px;border:1px solid var(--border);border-radius:6px;width:100%;margin-bottom:14px">
+<main class="main">
+  <div id="overlay"><div class="spinner"></div></div>
+  <input id="search" type="text" placeholder="Search…" style="padding:11px 14px;border:1px solid var(--border);border-radius:6px;width:100%;margin-bottom:14px">
+  <div class="table-wrap"><table><thead id="thead"></thead><tbody id="tbody"></tbody></table><p id="empty-msg" style="text-align:center;padding:34px;color:#8d99a6">Upload a file or use AI Discovery to get started.</p></div>
+</main>
 
-    <div class="table-wrap">
-      <table>
-        <thead id="thead"></thead>
-        <tbody id="tbody"></tbody>
-      </table>
-      <p id="empty-msg" style="text-align:center;padding:34px;color:#8d99a6">Upload a file or use AI Discovery to get started.</p>
-    </div>
-  </main>
+<!-- column modal -->
+<div id="col-modal" class="modal"><div class="modal-inner"><h3>Visible Columns</h3><div id="col-list"></div><button id="col-close" class="btn btn-primary" style="margin-top:18px">Done</button></div></div>
+<!-- contacts modal -->
+<div id="contact-modal" class="modal"><div class="modal-inner" style="min-width:340px"><h3 id="c-title"></h3><div id="c-body"></div><button class="btn btn-primary" onclick="document.getElementById('contact-modal').style.display='none'">Close</button></div></div>
+<div id="toast"></div>
 
-  <!-- Column modal -->
-  <div id="col-modal" class="modal"><div class="modal-inner"><h3>Visible Columns</h3><div id="col-list" style="columns:2 200px"></div><button id="col-close" class="btn btn-primary" style="margin-top:16px">Done</button></div></div>
-
-  <!-- Contacts modal -->
-  <div id="contact-modal" class="modal"><div class="modal-inner" style="min-width:340px"><h3 id="c-title"></h3><div id="c-body"></div><button class="btn btn-primary" onclick="document.getElementById('contact-modal').style.display='none'">Close</button></div></div>
-
-  <div id="toast"></div>
-
-<!-- ───────── BUSINESS LOGIC ───────── -->
 <script>
 (()=>{
-  /* ---- COMPLETE column list ---- */
-  const COLUMNS=[
-    {key:'sn',label:'S.No.'},{key:'entityType',label:'LP/GP/Broker'},{key:'firmName',label:'Firm Name'},{key:'subType',label:'Type'},{key:'address',label:'Address'},{key:'country',label:'Country'},{key:'website',label:'Website'},{key:'companyLinkedIn',label:'Firm LinkedIn'},{key:'about',label:'About'},{key:'investmentStrategy',label:'Investment Strategy'},{key:'sector',label:'Sector'},{key:'sectorDetails',label:'Sector Details'},{key:'stagePreference',label:'Stage'},{key:'source',label:'Source'}
-  ];
+/* ---------- constant columns ---------- */
+const COLUMNS=[
+  {key:'sn',label:'S.No.'},
+  {key:'entityType',label:'LP/GP/Broker'},
+  {key:'firmName',label:'Firm Name'},
+  {key:'subType',label:'Type'},
+  {key:'address',label:'Address'},
+  {key:'country',label:'Country'},
+  {key:'website',label:'Website'},
+  {key:'companyLinkedIn',label:'Firm LinkedIn'},
+  {key:'about',label:'About'},
+  {key:'investmentStrategy',label:'Investment Strategy'},
+  {key:'sector',label:'Sector'},
+  {key:'sectorDetails',label:'Sector Details'},
+  {key:'stagePreference',label:'Stage'},
+  {key:'contactName',label:'Contact'},
+  {key:'designation',label:'Designation'},
+  {key:'email',label:'Email'},
+  {key:'linkedIn',label:'Contact LinkedIn'},
+  {key:'contactNumber',label:'Phone'},
+  {key:'source',label:'Source'}
+];
 
-  const state={filter:'All',search:'',visible:new Set(['sn','entityType','firmName','subType','country','sector','website','source']),sort:{col:'firmName',dir:'asc'}};
-  let db=[];let sn=1;
+/* ---------- state ---------- */
+const state={filter:'All',search:'',visible:new Set(['sn','entityType','firmName','subType','country','sector','website','source']),sort:{col:'firmName',dir:'asc'}};
+let db=[];let sn=1;
 
-  /* ---------- helpers ---------- */
-  const $=id=>document.getElementById(id);
-  const el=(t,c)=>{const e=document.createElement(t);if(c)e.className=c;return e};
-  const toast=(m,t='ok')=>{const d=el('div',`toast ${t}`);d.textContent=m;$('toast').appendChild(d);requestAnimationFrame(()=>d.classList.add('show'));setTimeout(()=>{d.classList.remove('show');d.addEventListener('transitionend',()=>d.remove());},4500)};
-  const loading=v=>$('overlay').style.display=v?'flex':'none';
+/* ---------- helpers ---------- */
+const $=id=>document.getElementById(id);
+const el=(t,c)=>{const e=document.createElement(t);if(c)e.className=c;return e};
+const toast=(m,t='ok')=>{const d=el('div',`toast ${t}`);d.textContent=m;$('toast').appendChild(d);requestAnimationFrame(()=>d.classList.add('show'));setTimeout(()=>{d.classList.remove('show');d.addEventListener('transitionend',()=>d.remove());},4500)};
+const loading=v=>$('overlay').style.display=v?'flex':'none';
 
-  /* ---------- render table ---------- */
-  function render(){const thead=$('thead'),tbody=$('tbody');thead.innerHTML='';tbody.innerHTML='';
-    const hr=thead.insertRow();
-    COLUMNS.forEach(c=>{if(!state.visible.has(c.key))return;const th=el('th');th.textContent=c.label;th.onclick=()=>{state.sort.col=c.key;state.sort.dir=state.sort.dir==='asc'?'desc':'asc';render();};hr.appendChild(th);});
-    const rows=db.filter(r=>state.filter==='All'||r.entityType===state.filter).filter(r=>{const q=state.search.toLowerCase();return!q||Object.values(r).some(v=>String(v).toLowerCase().includes(q))}).sort((a,b)=>{const A=a[state.sort.col]||'',B=b[state.sort.col]||'';return(A<B?-1:A>B?1:0)*(state.sort.dir==='asc'?1:-1)});
-    rows.forEach(r=>{const tr=tbody.insertRow();if(r.source==='Gemini'&&!r.validated)tr.classList.add('row-new');
-      COLUMNS.forEach(c=>{if(!state.visible.has(c.key))return;const td=tr.insertCell();if(c.key==='website'&&r.website){const a=el('a');a.href=r.website;a.textContent=r.website;a.target='_blank';td.appendChild(a);}else td.textContent=r[c.key]||'';});
-      const td=tr.insertCell();const b1=el('button','action');b1.innerHTML='👥';b1.title='View Contacts';b1.onclick=()=>openContacts(r);td.appendChild(b1);const b2=el('button','action');b2.innerHTML='🗑';b2.title='Delete';b2.onclick=()=>{db=db.filter(x=>x!==r);render();};td.appendChild(b2);});
-    $('empty-msg').style.display=rows.length?'none':'block';}
+/* ---------- render ---------- */
+function render(){const thead=$('thead'),tbody=$('tbody');thead.innerHTML='';tbody.innerHTML='';
+  const hr=thead.insertRow();
+  COLUMNS.forEach(c=>{if(!state.visible.has(c.key))return;const th=el('th');th.textContent=c.label;th.onclick=()=>{state.sort.col=c.key;state.sort.dir=state.sort.dir==='asc'?'desc':'asc';render();};hr.appendChild(th);});
+  const rows=db.filter(r=>state.filter==='All'||r.entityType===state.filter).filter(r=>{const q=state.search.toLowerCase();return!q||Object.values(r).some(v=>String(v).toLowerCase().includes(q))}).sort((a,b)=>{const A=a[state.sort.col]||'',B=b[state.sort.col]||'';return(A<B?-1:A>B?1:0)*(state.sort.dir==='asc'?1:-1)});
+  rows.forEach(r=>{const tr=tbody.insertRow();if(r.source==='Gemini'&&!r.validated)tr.classList.add('row-new');
+    COLUMNS.forEach(c=>{if(!state.visible.has(c.key))return;const td=tr.insertCell();td.title=r[c.key]||'';td.ondblclick=()=>td.classList.toggle('unwrap');if(c.key==='website'&&r.website){const a=el('a');a.href=r.website;a.textContent=r.website;a.target='_blank';td.appendChild(a);}else td.textContent=r[c.key]||'';});
+    const td=tr.insertCell();const b1=el('button','action');b1.innerHTML='👥';b1.title='View Contacts';b1.onclick=()=>openContacts(r);td.appendChild(b1);const b2=el('button','action');b2.innerHTML='🗑';b2.title='Delete';b2.onclick=()=>{db=db.filter(x=>x!==r);render();};td.appendChild(b2);});
+  $('empty-msg').style.display=rows.length?'none':'block';}
 
-  /* ---------- contacts modal ---------- */
-  function openContacts(firm){$('c-title').textContent=`Contacts – ${firm.firmName}`;$('c-body').innerHTML=(firm.contacts&&firm.contacts.length)?firm.contacts.map(c=>`<p><strong>${c.contactName||''}</strong><br>${c.designation||''}<br>${c.email||''}<br>${c.linkedIn?`<a href="${c.linkedIn}" target="_blank">LinkedIn</a>`:''}</p>`).join(''):'<p>No contacts stored yet.</p>';$('contact-modal').style.display='flex';}
+/* ---------- open contacts ---------- */
+function openContacts(firm){$('c-title').textContent=`Contacts – ${firm.firmName}`;$('c-body').innerHTML=(firm.contacts&&firm.contacts.length)?firm.contacts.map(c=>`<p><strong>${c.contactName||''}</strong><br>${c.designation||''}<br>${c.email||''}<br>${c.linkedIn?`<a href="${c.linkedIn}" target="_blank">LinkedIn</a>`:''}</p>`).join(''):'<p>No contacts stored.</p>';$('contact-modal').style.display='flex';}
 
-  /* ---------- column modal ---------- */
-  $('col-btn').onclick=()=>{const list=$('col-list');list.innerHTML='';COLUMNS.forEach(c=>{const lab=el('label');const cb=el('input');cb.type='checkbox';cb.checked=state.visible.has(c.key);cb.onchange=e=>{e.target.checked?state.visible.add(c.key):state.visible.delete(c.key);};lab.append(cb,c.label);list.appendChild(lab);});$('col-modal').style.display='flex';};$('col-close').onclick=()=>{$('col-modal').style.display='none';render();};$('col-modal').onclick=e=>{if(e.target.id==='col-modal')$('col-modal').style.display='none';};
+/* ---------- column modal ---------- */
+$('col-btn').onclick=()=>{const list=$('col-list');list.innerHTML='';COLUMNS.forEach(c=>{const lab=el('label');const cb=el('input');cb.type='checkbox';cb.checked=state.visible.has(c.key);cb.onchange=e=>{e.target.checked?state.visible.add(c.key):state.visible.delete(c.key);};lab.append(cb,c.label);list.appendChild(lab);});$('col-modal').style.display='flex';};$('col-close').onclick=()=>{$('col-modal').style.display='none';render();};$('col-modal').onclick=e=>{if(e.target.id==='col-modal')$('col-modal').style.display='none';};
 
-  /* ---------- filters & search ---------- */
-  document.querySelectorAll('.filter-buttons .btn').forEach(b=>b.onclick=()=>{document.querySelectorAll('.filter-buttons .btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');state.filter=b.dataset.filter;render();});$('search').oninput=e=>{state.search=e.target.value;render();};
+/* ---------- filters & search ---------- */
+$('search').oninput=e=>{state.search=e.target.value;render();};
+document.querySelectorAll('.filter-buttons .btn').forEach(b=>b.onclick=()=>{document.querySelectorAll('.filter-buttons .btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');state.filter=b.dataset.filter;render();});
 
-  /* ---------- upload ---------- */
-  $('file-in').onchange=e=>{const file=e.target.files[0];if(!file)return;loading(true);const reader=new FileReader();reader.onload=ev=>{try{const wb=XLSX.read(new Uint8Array(ev.target.result),{type:'array'});const json=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);json.forEach(r=>{const website=(r.Website||'').toLowerCase();if(db.some(x=>x.website.toLowerCase()===website))return;db.push({sn:sn++,entityType:r['LP/GP/Broker']||'Other',firmName:r['Firm Name']||'',subType:r.Type||'',address:r.Address||'',country:r.Country||'',website:r.Website||'',companyLinkedIn:r['Company LinkedIn']||'',about:r['About the Company']||'',investmentStrategy:r['Investment Strategy']||'',sector:r.Sector||'',sectorDetails:r['Sector Details']||'',stagePreference:r['Stage Preference']||'',source:'Upload',validated:1,contacts:[]});});toast('Upload finished','ok');render();}catch{toast('Upload failed','err');}loading(false);};reader.readAsArrayBuffer(file);e.target.value='';};
+/* ---------- upload CSV/XLS ---------- */
+$('file-in').onchange=e=>{const file=e.target.files[0];if(!file)return;loading(true);const reader=new FileReader();reader.onload=ev=>{try{
+  const wb=XLSX.read(new Uint8Array(ev.target.result),{type:'array'});
+  const sheet=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+  const map=new Map();
+  sheet.forEach(r=>{
+    const website=(r.Website||'').toLowerCase();if(!website)return;
+    if(!map.has(website))map.set(website,{sn:sn++,entityType:r['LP/GP/Broker']||'Other',firmName:r['Firm Name']||'',subType:r.Type||'',address:r.Address||'',country:r.Country||'',website:r.Website||'',companyLinkedIn:r['Company LinkedIn']||'',about:r['About the Company']||'',investmentStrategy:r['Investment Strategy']||'',sector:r.Sector||'',sectorDetails:r['Sector Details']||'',stagePreference:r['Stage Preference']||'',source:'Upload',validated:1,contacts:[]});
+    const contact={contactName:r['Contact Name']||'',designation:r['Designation']||'',email:r['Email']||'',linkedIn:r['LinkedIn']||'',contactNumber:r['Contact Number']||''};
+    if(contact.contactName)map.get(website).contacts.push(contact);
+  });
+  map.forEach(v=>{db.push(v);});
+  toast('Upload complete','ok');render();
+}catch{toast('Upload failed','err');}loading(false);};reader.readAsArrayBuffer(file);e.target.value='';};
 
-  /* ---------- export ---------- */
-  $('exp-btn').onclick=()=>{if(!db.length)return toast('Nothing to export','err');const header=COLUMNS.map(c=>c.label).join(',');const rows=db.map(r=>COLUMNS.map(c=>'"'+String(r[c.key]||'').replace(/"/g,'""')+'"').join(',')).join('\n');const blob=new Blob([header+'\n'+rows],{type:'text/csv;charset=utf-8'});const a=el('a');a.href=URL.createObjectURL(blob);a.download='lp_gp_export.csv';a.click();};
+/* ---------- export ---------- */
+$('exp-btn').onclick=()=>{if(!db.length)return toast('Nothing to export','err');const header=COLUMNS.map(c=>c.label).join(',');const rows=db.map(r=>COLUMNS.map(c=>`"${String(r[c.key]||'').replace(/"/g,'""')}"`).join(',')).join('\n');const blob=new Blob([header+'\n'+rows],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='lp_gp_export.csv';a.click();};
 
-  /* ---------- AI search ---------- */
-  $('ai-btn').onclick=async()=>{const entityType=$('ai-type').value,subType=$('ai-sub').value.trim(),sector=$('ai-sec').value.trim(),geo=$('ai-geo').value.trim();if(!subType||!sector||!geo)return toast('Fill all fields','err');loading(true);try{const res=await fetch('/api/find-investors',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({entityType,subType,sector,geo})});const data=await res.json();if(!res.ok)throw new Error(data.error||'API error');let added=0;data.forEach(f=>{const w=(f.website||'').toLowerCase();if(db.some(x=>x.website.toLowerCase()===w))return;db.push({sn:sn++,...f,contacts:[],validated:0});added++;});toast(`${added} new investors added`,'ok');render();}catch(e){toast('AI failed: '+e.message,'err');}loading(false);};
-
-  render();
+/* ---------- AI search ---------- */
+$('ai-btn').onclick=async()=>{const entityType=$('ai-type').value.trim(),subType=$('ai-sub').value.trim(),sector=$('ai-sec').value.trim(),geo=$('ai-geo').value.trim();if(!subType||!sector||!geo)return toast('Fill all fields','err');loading(true);
+try{
+  const res=await fetch('/api/find-investors',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({entityType,subType,sector,geo})});
+  const data=await res.json();if(!res.ok)throw new Error(data.error||'API error');let added=0;
+    data.forEach(f=>{
+      const w=(f.website||'').toLowerCase();
+      if(db.some(x=>x.website.toLowerCase()===w))return;
+      db.push({sn:sn++,entityType,firmName:f.firmName||'',subType:f.categorizedSubType||subType,address:'',country:f.country||geo,website:f.website||'',companyLinkedIn:'',about:f.about||'',investmentStrategy:f.investmentStrategy||'',sector:f.categorizedSector||sector,sectorDetails:'',stagePreference:'',source:'Gemini',validated:0,contacts:[]});
+      added++;});
+    toast(`${added} new investors added`,'ok');
+    render();
+  }catch(e){toast('AI failed: '+e.message,'err');}
+  loading(false);
+};
+render();
 })();
-</script>
-</body>
-</html>
