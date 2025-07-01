@@ -3,7 +3,7 @@
  * Body  : { entityType, subType, sector, geo }
  * Return: { added, newFirms }
  */
-export async function onRequestPost({ request, env }) {
+export async function onRequest({ request, env }) {
   // Shortcuts to our secrets and database
   const { GEMINI_KEY, DB } = env;
 
