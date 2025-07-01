@@ -1,156 +1,316 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Magistral LP‑GP Finder v2</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <style>
-  :root{--blue:#013463;--teal:#00958f;--grey:#687683;--bg:#f5f7fa;--white:#fff;--border:#d6dde5;--shadow:0 2px 6px rgba(0,0,0,.08);--font:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif}
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:var(--font);background:var(--bg);color:#1f2d3d;display:flex;min-height:100vh;overflow:hidden}
-  a{color:var(--blue);text-decoration:none}
-  /* ---- LAYOUT ---- */
-  .sidebar{flex:0 0 310px;background:var(--white);border-right:1px solid var(--border);padding:22px;display:flex;flex-direction:column;gap:26px;overflow:auto}
-  .main{flex:1;display:flex;flex-direction:column;padding:22px;position:relative}
-  .panel{background:var(--white);border:1px solid var(--border);border-radius:10px;padding:20px;box-shadow:var(--shadow)}
-  .panel h2{font-size:18px;font-weight:700;margin-bottom:12px;color:var(--blue);border-bottom:1px solid var(--border);padding-bottom:8px}
-  /* ---- BUTTONS ---- */
-  .btn{border:none;border-radius:6px;padding:10px 14px;font-size:14px;font-weight:600;cursor:pointer;transition:.2s;width:100%;line-height:1.25;text-align:center}
-  .btn-pri{background:var(--teal);color:#fff}.btn-pri:hover{background:#007c77}
-  .btn-sec{background:var(--grey);color:#fff}.btn-sec:hover{background:#556270}
-  .filter-buttons{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
-  .filter-buttons .btn{padding:6px 0;font-size:13px;background:#e9edf2;color:#344454;border:1px solid transparent}
-  .filter-buttons .active{background:var(--blue);color:#fff}
-  /* ---- INPUTS ---- */
-  input,select{width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:6px;font-size:14px;background:var(--white)}
-  input:focus,select:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 2px rgba(0,149,143,.25)}
-  /* ---- TABLE ---- */
-  .table-wrap{flex:1;background:var(--white);border:1px solid var(--border);border-radius:10px;overflow:auto;box-shadow:var(--shadow)}
-  .table{width:100%;min-width:1400px;border-collapse:collapse;font-size:13px;table-layout:fixed}
-  th,td{padding:8px 10px;border-bottom:1px solid var(--border);white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
-  th{background:var(--bg);color:var(--blue);font-weight:600;text-transform:uppercase;position:sticky;top:0;z-index:3}
-  tr:hover td{background:#f0f4f8}
-  .row-new{background:#fffbe7}
-  .icon{cursor:pointer;font-size:16px;color:var(--blue);margin-right:8px}
-  .icon.del{color:#b60000}
-  /* ---- OVERLAY / TOAST ---- */
-  #overlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(255,255,255,.55);z-index:300}
-  .spinner{width:44px;height:44px;border:5px solid rgba(0,0,0,.12);border-top-color:var(--teal);border-radius:50%;animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
-  #toast{position:fixed;top:22px;right:24px;z-index:600}
-  .toast{padding:11px 17px;border-radius:8px;color:#fff;font-weight:600;margin-bottom:10px;box-shadow:var(--shadow);opacity:0;transform:translateY(-10px);transition:.3s}
-  .toast.show{opacity:1;transform:none}.toast.ok{background:var(--teal)}.toast.err{background:#c0392b}
-  /* ---- MODAL ---- */
-  .modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:500}
-  .modal-box{background:#fff;border-radius:10px;padding:24px;width:92%;max-width:820px;max-height:85%;overflow:auto;box-shadow:var(--shadow)}
-  .modal-box h3{font-size:18px;font-weight:700;margin-bottom:14px;color:var(--blue)}
-  .modal-box table{width:100%;border-collapse:collapse;font-size:14px}
-  .modal-box th,.modal-box td{padding:8px 10px;border-bottom:1px solid var(--border)}
-  /* Configure‑columns list */
-  #col-list{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
-  #col-list li{padding:6px 10px;border:1px solid var(--border);border-radius:6px;cursor:pointer;text-align:center;user-select:none}
-  #col-list li.selected{background:var(--teal);color:#fff;border-color:var(--teal)}
-  /* ---- QUICK FILTERS ---- */
-  .panel.quick-filters label{display:block;font-size:13px;margin-bottom:4px;color:#344454}
-  .panel.quick-filters select{margin-bottom:12px;width:100%}
-  /* ---- MANAGE LIST BUTTONS ---- */
-  .panel.manage-list{display:flex;flex-direction:column;gap:10px}
-  .panel.manage-list .btn{width:100%}
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Magistral LP-GP Finder v2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+/* ========== THEME ========= */
+:root{--blue:#013463;--teal:#00958f;--grey:#687683;--bg:#f5f7fa;--white:#fff;--border:#d6dde5;--shadow:0 2px 6px rgba(0,0,0,.08);--font:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font);background:var(--bg);color:#1f2d3d;display:flex;min-height:100vh;overflow:hidden}
+a{color:var(--blue);text-decoration:none}
+/* ========== LAYOUT ========= */
+.sidebar{flex:0 0 310px;background:var(--white);border-right:1px solid var(--border);padding:22px;display:flex;flex-direction:column;gap:26px;overflow:auto}
+.main{flex:1;display:flex;flex-direction:column;padding:22px;position:relative}
+.panel{background:var(--white);border:1px solid var(--border);border-radius:10px;padding:20px;box-shadow:var(--shadow)}
+.panel h2{font-size:18px;font-weight:700;margin-bottom:12px;color:var(--blue);border-bottom:1px solid var(--border);padding-bottom:8px}
+/* ========== BUTTONS ========= */
+.btn{border:none;border-radius:6px;padding:10px 14px;font-size:14px;font-weight:600;cursor:pointer;transition:.2s;width:100%;line-height:1.25;text-align:center}
+.btn-pri{background:var(--teal);color:#fff}.btn-pri:hover{background:#007c77}
+.btn-sec{background:var(--grey);color:#fff}.btn-sec:hover{background:#556270}
+.filter-buttons{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.filter-buttons .btn{padding:6px 0;font-size:13px;background:#e9edf2;color:#344454;border:1px solid transparent}
+.filter-buttons .active{background:var(--blue);color:#fff}
+/* ========== INPUTS ========= */
+input,select{width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:6px;font-size:14px;background:var(--white)}
+input:focus,select:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 2px rgba(0,149,143,.25)}
+/* ========== TABLE ========= */
+.table-wrap{flex:1;background:var(--white);border:1px solid var(--border);border-radius:10px;overflow:auto;box-shadow:var(--shadow)}
+.table{width:100%;min-width:1400px;border-collapse:collapse;font-size:13px;table-layout:fixed}
+th,td{padding:8px 10px;border-bottom:1px solid var(--border);white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+th{background:var(--bg);color:var(--blue);font-weight:600;text-transform:uppercase;position:sticky;top:0;z-index:3}
+tr:hover td{background:#f0f4f8}
+.row-new{background:#fffbe7}
+.icon{cursor:pointer;font-size:16px;color:var(--blue);margin-right:8px}
+.icon.del{color:#b60000}
+/* ========== OVERLAY / TOAST ========= */
+#overlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(255,255,255,.55);z-index:300}
+.spinner{width:44px;height:44px;border:5px solid rgba(0,0,0,.12);border-top-color:var(--teal);border-radius:50%;animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+#toast{position:fixed;top:22px;right:24px;z-index:600}
+.toast{padding:11px 17px;border-radius:8px;color:#fff;font-weight:600;margin-bottom:10px;box-shadow:var(--shadow);opacity:0;transform:translateY(-10px);transition:.3s}
+.toast.show{opacity:1;transform:none}.toast.ok{background:var(--teal)}.toast.err{background:#c0392b}
+/* ========== MODALS ========= */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:500}
+.modal-box{background:#fff;border-radius:10px;padding:24px;width:92%;max-width:820px;max-height:85%;overflow:auto;box-shadow:var(--shadow)}
+.modal-box h3{font-size:18px;font-weight:700;margin-bottom:14px;color:var(--blue)}
+.modal-box table{width:100%;border-collapse:collapse;font-size:14px}
+.modal-box th,.modal-box td{padding:8px 10px;border-bottom:1px solid var(--border)}
+/* Configure columns list */
+#col-list{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+#col-list li{padding:6px 10px;border:1px solid var(--border);border-radius:6px;cursor:pointer;text-align:center;user-select:none}
+#col-list li.selected{background:var(--teal);color:#fff;border-color:var(--teal)}
+/* Quick filters */
+.panel.quick-filters label{display:block;font-size:13px;margin-bottom:4px;color:#344454}
+.panel.quick-filters select{margin-bottom:12px;width:100%}
+/* Manage list */
+.panel.manage-list{display:flex;flex-direction:column;gap:10px}
+.panel.manage-list .btn{width:100%}
+</style>
 </head>
 <body>
 <aside class="sidebar">
   <!-- VIEW -->
-  <div class="panel"><h2>View</h2>
-    <div class="filter-buttons"><button class="btn active" data-f="All">All</button><button class="btn" data-f="LP">LPs</button><button class="btn" data-f="GP">GPs</button><button class="btn" data-f="Broker">Brokers</button><button class="btn" data-f="Other">Others</button></div>
+  <div class="panel">
+    <h2>View</h2>
+    <div class="filter-buttons">
+      <button class="btn active" data-f="All">All</button>
+      <button class="btn" data-f="LP">LPs</button>
+      <button class="btn" data-f="GP">GPs</button>
+      <button class="btn" data-f="Broker">Brokers</button>
+      <button class="btn" data-f="Other">Others</button>
+    </div>
     <button id="col-btn" class="btn btn-sec" style="margin-top:14px">Configure Columns</button>
   </div>
+
   <!-- QUICK FILTERS -->
-  <div class="panel quick-filters"><h2>Quick Filters</h2>
+  <div class="panel quick-filters">
+    <h2>Quick Filters</h2>
     <label for="q-country">Country</label><select id="q-country"><option value="">All</option></select>
     <label for="q-sector">Sector</label><select id="q-sector"><option value="">All</option></select>
     <label for="q-stage">Stage</label><select id="q-stage"><option value="">All</option></select>
     <button id="q-clear" class="btn btn-sec">Clear</button>
   </div>
+
   <!-- AI DISCOVERY -->
-  <div class="panel"><h2>AI Discovery</h2>
-    <label style="font-size:13px">Entity Type</label><select id="ai-type"><option>LP</option><option>GP</option><option>Broker</option><option>Other</option></select>
-    <label style="font-size:13px;margin-top:12px">Specific Type</label><input id="ai-sub" placeholder="Family Office" />
-    <label style="font-size:13px;margin-top:12px">Sector</label><input id="ai-sec" placeholder="Health Care" />
-    <label style="font-size:13px;margin-top:12px">Geography</label><input id="ai-geo" placeholder="USA" />
-    <button id="ai-btn" class="btn btn-pri" style="margin-top:16px">✨ Find Investors</button>
+  <div class="panel">
+    <h2>AI Discovery</h2>
+    <label style="font-size:13px">Entity Type</label>
+    <select id="ai-type"><option>LP</option><option>GP</option><option>Broker</option><option>Other</option></select>
+    <label style="font-size:13px;margin-top:12px">Specific Type</label>
+    <input id="ai-sub" placeholder="Family Office">
+    <label style="font-size:13px;margin-top:12px">Sector</label>
+    <input id="ai-sec" placeholder="Health Care">
+    <label style="font-size:13px;margin-top:12px">Geography</label>
+    <input id="ai-geo" placeholder="USA">
+    <button id="ai-btn" class="btn btn-pri" style="margin-top:16px">✨ Find Investors</button>
   </div>
+
   <!-- MANAGE LIST -->
-  <div class="panel manage-list"><h2>Manage List</h2>
-    <label class="btn btn-sec" for="file-in">Upload Excel/CSV</label><input type="file" id="file-in" accept=".xlsx,.xls,.csv" hidden />
-    <button id="exp-btn" class="btn btn-sec">Export CSV</button>
+  <div class="panel manage-list">
+    <h2>Manage List</h2>
+    <label class="btn btn-sec" for="file-in">Upload Excel/CSV</label>
+    <input type="file" id="file-in" accept=".xlsx,.xls,.csv" hidden>
+    <button id="exp-btn" class="btn btn-sec">Export CSV</button>
   </div>
 </aside>
+
 <main class="main">
   <div id="overlay"><div class="spinner"></div></div>
-  <input id="search" placeholder="Search…" style="padding:9px 12px;border:1px solid var(--border);border-radius:6px;width:100%;margin-bottom:12px" />
-  <div class="table-wrap"><table class="table"><thead id="thead"></thead><tbody id="tbody"></tbody></table><p id="empty" style="text-align:center;padding:32px;color:#8d99a6">Upload a file or use AI Discovery to get started.</p></div>
+  <input id="search" placeholder="Search…" style="padding:9px 12px;border:1px solid var(--border);border-radius:6px;width:100%;margin-bottom:12px">
+  <div class="table-wrap">
+    <table class="table">
+      <thead id="thead"></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    <p id="empty" style="text-align:center;padding:32px;color:#8d99a6">Upload a file or use AI Discovery to get started.</p>
+  </div>
 </main>
+
 <div id="toast"></div>
+
 <!-- COLUMN MODAL -->
-<div class="modal" id="col-modal"><div class="modal-box" style="width:360px"><h3>Visible Columns</h3><ul id="col-list"></ul><button class="btn btn-pri close" style="margin-top:14px;width:100%">Done</button></div></div>
+<div class="modal" id="col-modal">
+  <div class="modal-box" style="width:360px">
+    <h3>Visible Columns</h3>
+    <ul id="col-list"></ul>
+    <button class="btn btn-pri close" style="margin-top:14px;width:100%">Done</button>
+  </div>
+</div>
+
 <!-- CONTACTS MODAL -->
-<div class="modal" id="ct-modal"><div class="modal-box"><h3 id="ct-title">Contacts</h3><table><thead><tr><th>Name</th><th>Designation</th><th>Email</th><th>LinkedIn</th></tr></thead><tbody id="ct-body"></tbody></table><button class="btn btn-pri close" style="margin-top:16px;width:120px">Close</button></div></div>
+<div class="modal" id="ct-modal">
+  <div class="modal-box">
+    <h3 id="ct-title">Contacts</h3>
+    <table>
+      <thead><tr><th>Name</th><th>Designation</th><th>Email</th><th>LinkedIn</th></tr></thead>
+      <tbody id="ct-body"></tbody>
+    </table>
+    <button class="btn btn-pri close" style="margin-top:16px;width:120px">Close</button>
+  </div>
+</div>
+
 <script>
-(()=>{
-/* ---------- STATE & CONSTANTS ---------- */
-const COLS=[{key:'sn',label:'#'},{key:'entityType',label:'LP/GP/Broker'},{key:'firmName',label:'Firm Name'},{key:'subType',label:'Type'},{key:'address',label:'Address'},{key:'country',label:'Country'},{key:'website',label:'Website'},{key:'companyLinkedIn',label:'Firm LinkedIn'},{key:'about',label:'About'},{key:'investmentStrategy',label:'Strategy'},{key:'sector',label:'Sector'},{key:'sectorDetails',label:'Sector Details'},{key:'stage',label:'Stage'},{key:'source',label:'Source'},{key:'actions',label:''}];
-const alias={"lp/gp/broker":"entityType","lp/gp":"entityType","lp":"entityType","gp":"entityType","firm name":"firmName","name":"firmName","type":"subType","subtype":"subType","address":"address","country":"country","website":"website","company linkedin":"companyLinkedIn","firm linkedin":"companyLinkedIn","about":"about","about the company":"about","investment strategy":"investmentStrategy","strategy":"investmentStrategy","sector":"sector","sector details":"sectorDetails","stage":"stage","stage preference":"stage","source":"source","contact name":"contactName","designation":"designation","linkedin":"linkedIn","email":"email","contact number":"contactNumber"};
+(()=>{/* ========== STATE ========= */
+const COLS=[
+  {key:'sn',label:'#'},{key:'entityType',label:'LP/GP/Broker'},{key:'firmName',label:'Firm Name'},
+  {key:'subType',label:'Type'},{key:'address',label:'Address'},{key:'country',label:'Country'},
+  {key:'website',label:'Website'},{key:'companyLinkedIn',label:'Firm LinkedIn'},{key:'about',label:'About'},
+  {key:'investmentStrategy',label:'Strategy'},{key:'sector',label:'Sector'},{key:'sectorDetails',label:'Sector Details'},
+  {key:'stage',label:'Stage'},{key:'source',label:'Source'},{key:'actions',label:''}
+];
+const alias={"lp/gp/broker":"entityType","lp/gp":"entityType","lp":"entityType","gp":"entityType","firm name":"firmName",
+  "name":"firmName","type":"subType","subtype":"subType","address":"address","country":"country","website":"website",
+  "company linkedin":"companyLinkedIn","firm linkedin":"companyLinkedIn","about":"about","investment strategy":"investmentStrategy",
+  "strategy":"investmentStrategy","sector":"sector","sector details":"sectorDetails","stage":"stage","source":"source",
+  "contact name":"contactName","designation":"designation","linkedin":"linkedIn","email":"email","contact number":"contactNumber"};
 const contactKeys=new Set(['contactName','designation','linkedIn','email','contactNumber']);
 let firms=[];let filter='All';
 const visible=new Set(['sn','entityType','firmName','subType','country','website','sector','stage','source','actions']);
-/* ---------- DOM ---------- */
+
+/* ========== DOM SHORTCUTS ========= */
 const $=q=>document.querySelector(q),$$=q=>document.querySelectorAll(q);
-const UI={thead:$('#thead'),tbody:$('#tbody'),empty:$('#empty'),overlay:$('#overlay'),toast:$('#toast'),search:$('#search'),filterBtns:$$('.filter-buttons .btn'),colBtn:$('#col-btn'),colModal:$('#col-modal'),colList:$('#col-list'),ctModal:$('#ct-modal'),ctTitle:$('#ct-title'),ctBody:$('#ct-body'),qCountry:$('#q-country'),qSector:$('#q-sector'),qStage:$('#q-stage')};
-/* ---------- UTIL ---------- */
+const UI={
+  thead:$('#thead'),tbody:$('#tbody'),empty:$('#empty'),overlay:$('#overlay'),toast:$('#toast'),search:$('#search'),
+  filterBtns:$$('.filter-buttons .btn'),colBtn:$('#col-btn'),colModal:$('#col-modal'),colList:$('#col-list'),
+  ctModal:$('#ct-modal'),ctTitle:$('#ct-title'),ctBody:$('#ct-body'),
+  qCountry:$('#q-country'),qSector:$('#q-sector'),qStage:$('#q-stage'),
+  aiType:$('#ai-type'),aiSub:$('#ai-sub'),aiSec:$('#ai-sec'),aiGeo:$('#ai-geo'),aiBtn:$('#ai-btn')
+};
+
+/* ========== UTIL ========= */
 const showOverlay=f=>UI.overlay.style.display=f?'flex':'none';
-const toast=(m,ok=true)=>{const t=document.createElement('div');t.className=`toast ${ok?'ok':'err'}`;t.textContent=m;UI.toast.appendChild(t);requestAnimationFrame(()=>t.classList.add('show'));setTimeout(()=>{t.classList.remove('show');t.addEventListener('transitionend',()=>t.remove());},3500);};
+const toast=(m,ok=true)=>{const t=document.createElement('div');t.className=`toast ${ok?'ok':'err'}`;t.textContent=m;
+  UI.toast.appendChild(t);requestAnimationFrame(()=>t.classList.add('show'));
+  setTimeout(()=>{t.classList.remove('show');t.addEventListener('transitionend',()=>t.remove());},3500);};
 const mapKey=k=>alias[k.toLowerCase().trim()]||k.trim().replace(/\s+/g,'');
-const populateSelect=(sel,vals)=>{const cur=sel.value;sel.innerHTML='<option value="">All</option>'+[...vals].sort().map(v=>`<option>${v}</option>`).join('');sel.value=cur;};
-/* ---------- RENDER ---------- */
-function rebuildFilters(){const c=new Set(),s=new Set(),st=new Set();firms.forEach(f=>{if(f.country)c.add(f.country);if(f.sector)f.sector.split(',').forEach(x=>s.add(x.trim()));if(f.stage)st.add(f.stage);});populateSelect(UI.qCountry,c);populateSelect(UI.qSector,s);populateSelect(UI.qStage,st);}  
-function render(){UI.thead.innerHTML=UI.tbody.innerHTML='';const hr=document.createElement('tr');COLS.forEach(col=>{if(visible.has(col.key)){const th=document.createElement('th');th.textContent=col.label;hr.appendChild(th);}});UI.thead.appendChild(hr);
-  const term=UI.search.value.toLowerCase();const fc=UI.qCountry.value;const fs=UI.qSector.value.toLowerCase();const fst=UI.qStage.value;
-  const rows=firms.filter(f=>  (filter==='All'||f.entityType===filter)&& (!fc||f.country===fc)&& (!fst||f.stage===fst)&& (!fs||f.sector.toLowerCase().split(',').some(x=>x.trim()===fs))&& Object.values(f).some(v=>String(v).toLowerCase().includes(term)));
+const populateSelect=(sel,vals)=>{const cur=sel.value;
+  sel.innerHTML='<option value="">All</option>'+[...vals].sort().map(v=>`<option>${v}</option>`).join('');
+  sel.value=cur;};
+
+/* ========== FILTER SETUP ========= */
+function rebuildFilters(){
+  const c=new Set(),s=new Set(),st=new Set();
+  firms.forEach(f=>{if(f.country)c.add(f.country);
+    if(f.sector)f.sector.split(',').forEach(x=>s.add(x.trim()));
+    if(f.stage)st.add(f.stage);});
+  populateSelect(UI.qCountry,c);populateSelect(UI.qSector,s);populateSelect(UI.qStage,st);}
+function render(){
+  UI.thead.innerHTML=UI.tbody.innerHTML='';
+  const hr=document.createElement('tr');
+  COLS.forEach(col=>{if(visible.has(col.key)){const th=document.createElement('th');th.textContent=col.label;hr.appendChild(th);}});
+  UI.thead.appendChild(hr);
+  const term=UI.search.value.toLowerCase();
+  const fc=UI.qCountry.value,fs=UI.qSector.value.toLowerCase(),fst=UI.qStage.value;
+  const rows=firms.filter(f=>(filter==='All'||f.entityType===filter)&&(!fc||f.country===fc)&&(!fst||f.stage===fst)
+    &&(!fs||f.sector.toLowerCase().split(',').some(x=>x.trim()===fs))
+    &&Object.values(f).some(v=>String(v).toLowerCase().includes(term)));
   UI.empty.style.display=rows.length?'none':'block';
-  rows.forEach((f,idx)=>{const tr=document.createElement('tr');if(f.source==='Gemini'&&!f.validated)tr.classList.add('row-new');COLS.forEach(col=>{if(!visible.has(col.key))return;const td=document.createElement('td');let val=f[col.key]||'';if(col.key==='sn')val=idx+1; if((col.key==='website'||col.key==='companyLinkedIn')&&val){td.innerHTML=`<a href="${val.startsWith('http')?val:`https://${val}`}" target="_blank">${val}</a>`;} else if(col.key==='actions'){td.innerHTML=`<span class="icon" data-id="${f.uid}" data-act="contacts">👥</span><span class="icon del" data-id="${f.uid}" data-act="del">🗑️</span>`;} else td.textContent=val;td.title=val;tr.appendChild(td);});UI.tbody.appendChild(tr);});}
-/* ---------- EVENT BINDINGS ---------- */
-[...UI.filterBtns].forEach(b=>b.addEventListener('click',()=>{[...UI.filterBtns].forEach(x=>x.classList.remove('active'));b.classList.add('active');filter=b.dataset.f;render();}));
+  rows.forEach((f,idx)=>{
+    const tr=document.createElement('tr');if(f.source==='Gemini'&&!f.validated)tr.classList.add('row-new');
+    COLS.forEach(col=>{if(!visible.has(col.key))return;
+      const td=document.createElement('td');let val=f[col.key]||'';
+      if(col.key==='sn')val=idx+1;
+      if((col.key==='website'||col.key==='companyLinkedIn')&&val){
+        td.innerHTML=`<a href="${val.startsWith('http')?val:`https://${val}`}" target="_blank">${val}</a>`;
+      }else if(col.key==='actions'){
+        td.innerHTML=`<span class="icon" data-id="${f.uid}" data-act="contacts">👥</span>
+                       <span class="icon del" data-id="${f.uid}" data-act="del">🗑️</span>`;
+      }else td.textContent=val;td.title=val;tr.appendChild(td);});
+    UI.tbody.appendChild(tr);});
+}
+
+/* ========== EVENT BINDINGS ========= */
+[...UI.filterBtns].forEach(b=>b.addEventListener('click',()=>{
+  [...UI.filterBtns].forEach(x=>x.classList.remove('active'));b.classList.add('active');filter=b.dataset.f;render();}));
 UI.search.addEventListener('input',render);
 [UI.qCountry,UI.qSector,UI.qStage].forEach(sel=>sel.addEventListener('change',render));
 $('#q-clear').addEventListener('click',()=>{UI.qCountry.value=UI.qSector.value=UI.qStage.value='';render();});
-/* COLUMN MODAL */
-UI.colBtn.addEventListener('click',()=>{UI.colList.innerHTML='';COLS.forEach(c=>{if(c.key==='actions')return;const li=document.createElement('li');li.dataset.k=c.key;li.textContent=c.label;li.classList.toggle('selected',visible.has(c.key));UI.colList.appendChild(li);});UI.colModal.style.display='flex';});
-UI.colModal.addEventListener('click',e=>{if(e.target===UI.colModal||e.target.classList.contains('close'))UI.colModal.style.display='none';});
-UI.colList.addEventListener('click',e=>{const li=e.target.closest('li');if(!li)return;const k=li.dataset.k;if(visible.has(k)){visible.delete(k);li.classList.remove('selected');}else{visible.add(k);li.classList.add('selected');}render();});
-/* CONTACT & DELETE */
-UI.tbody.addEventListener('click',e=>{if(!e.target.classList.contains('icon'))return;const id=e.target.dataset.id;const rec=firms.find(x=>x.uid===id);if(!rec)return;const act=e.target.dataset.act;if(act==='contacts'){UI.ctTitle.textContent=`Contacts – ${rec.firmName}`;UI.ctBody.innerHTML=rec.contacts?.length?rec.contacts.map(c=>`<tr><td>${c.contactName||''}</td><td>${c.designation||''}</td><td>${c.email||''}</td><td>${c.linkedIn?`<a href='${c.linkedIn}' target='_blank'>Link</a>`:''}</td></tr>`).join(''):'<tr><td colspan="4" style="text-align:center;padding:14px">No contacts stored yet.</td></tr>';UI.ctModal.style.display='flex';}else if(confirm('Delete this entry?')){firms=firms.filter(x=>x.uid!==id);render();toast('Entry deleted');}});
-UI.ctModal.addEventListener('click',e=>{if(e.target===UI.ctModal||e.target.classList.contains('close'))UI.ctModal.style.display='none';});
-/* ---------- UPLOAD (FileReader) ---------- */
+
+/* ---- COLUMN MODAL ---- */
+UI.colBtn.addEventListener('click',()=>{
+  UI.colList.innerHTML='';COLS.forEach(c=>{if(c.key==='actions')return;
+    const li=document.createElement('li');li.dataset.k=c.key;li.textContent=c.label;
+    li.classList.toggle('selected',visible.has(c.key));UI.colList.appendChild(li);});
+  UI.colModal.style.display='flex';});
+UI.colModal.addEventListener('click',e=>{
+  if(e.target===UI.colModal||e.target.classList.contains('close'))UI.colModal.style.display='none';});
+UI.colList.addEventListener('click',e=>{
+  const li=e.target.closest('li');if(!li)return;const k=li.dataset.k;
+  if(visible.has(k)){visible.delete(k);li.classList.remove('selected');}
+  else{visible.add(k);li.classList.add('selected');}render();});
+
+/* ---- ROW ICONS ---- */
+UI.tbody.addEventListener('click',e=>{
+  if(!e.target.classList.contains('icon'))return;
+  const id=e.target.dataset.id;const rec=firms.find(x=>x.uid===id);if(!rec)return;
+  if(e.target.dataset.act==='contacts'){
+    UI.ctTitle.textContent=`Contacts – ${rec.firmName}`;
+    UI.ctBody.innerHTML=rec.contacts?.length?rec.contacts.map(c=>
+      `<tr><td>${c.contactName||''}</td><td>${c.designation||''}</td><td>${c.email||''}</td>
+       <td>${c.linkedIn?`<a href='${c.linkedIn}' target='_blank'>Link</a>`:''}</td></tr>`
+    ).join(''):'<tr><td colspan="4" style="text-align:center;padding:14px">No contacts stored yet.</td></tr>';
+    UI.ctModal.style.display='flex';
+  } else if(confirm('Delete this entry?')){
+    firms=firms.filter(x=>x.uid!==id);render();toast('Entry deleted');}});
+UI.ctModal.addEventListener('click',e=>{
+  if(e.target===UI.ctModal||e.target.classList.contains('close'))UI.ctModal.style.display='none';});
+
+/* ========== UPLOAD (Excel/CSV) ========= */
 $('#file-in').addEventListener('change',e=>{
   const file=e.target.files[0];if(!file)return;showOverlay(true);
   const reader=new FileReader();
   reader.onload=ev=>{
-    try{const wb=XLSX.read(new Uint8Array(ev.target.result),{type:'array'});const sheet=wb.Sheets[wb.SheetNames[0]];const rows=XLSX.utils.sheet_to_json(sheet,{defval:''});if(!rows.length)throw new Error('Sheet empty');
+    try{
+      const wb=XLSX.read(new Uint8Array(ev.target.result),{type:'array'});
+      const sheet=wb.Sheets[wb.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(sheet,{defval:''});
+      if(!rows.length)throw new Error('empty');
       const exist=new Map(firms.map(f=>[(f.website||f.firmName).toLowerCase(),f]));let added=0;
-      rows.forEach(r=>{const obj={contacts:[],validated:true,source:'Upload'};const contact={};Object.entries(r).forEach(([k,v])=>{const key=mapKey(k);(contactKeys.has(key)?contact:obj)[key]=v;});if(Object.values(contact).some(Boolean))obj.contacts.push(contact);if(!obj.firmName)return;const key=(obj.website||obj.firmName).toLowerCase();if(exist.has(key)){if(obj.contacts.length)exist.get(key).contacts.push(...obj.contacts);}else{obj.uid=`u${Date.now()}_${Math.random()}`;firms.push(obj);exist.set(key,obj);added++;}});
+      rows.forEach(r=>{
+        const obj={contacts:[],validated:true,source:'Upload'};
+        const contact={};Object.entries(r).forEach(([k,v])=>{
+          const key=mapKey(k);(contactKeys.has(key)?contact:obj)[key]=v;});
+        if(Object.values(contact).some(Boolean))obj.contacts.push(contact);
+        if(!obj.firmName)return;
+        const key=(obj.website||obj.firmName).toLowerCase();
+        if(exist.has(key)){if(obj.contacts.length)exist.get(key).contacts.push(...obj.contacts);}
+        else{obj.uid=`u${Date.now()}_${Math.random()}`;firms.push(obj);exist.set(key,obj);added++;}});
       toast(`${added} new companies added`,true);rebuildFilters();render();
-    }catch(err){console.error(err);toast('Upload failed',false);}finally{showOverlay(false);e.target.value='';}
-  };
-  reader.onerror=()=>{showOverlay(false);toast('Could not read file',false);} ;
+    }catch{toast('Upload failed',false);}finally{showOverlay(false);e.target.value='';}};
+  reader.onerror=()=>{showOverlay(false);toast('Could not read file',false);};
   reader.readAsArrayBuffer(file);
 });
-/* ---------- EXPORT ---------- */
-$('#exp-btn').addEventListener('click',()=>{if(!firms.length){toast('Nothing to export',false);return;}const hdr=COLS.filter(c=>c.key!=='actions').map(c=>c.key).join(',');const rows=firms.map(f=>COLS.filter(c=>c.key!=='actions').map(c=>`"${(f[c.key]||'').replace(/"/g,'""')}"`).join(',')).join('\n');const blob=new Blob([hdr+'\n'+rows],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='magistral_lp_gp.csv';a.click();});
-/* ---------- INIT ---------- */
+
+/* ========== EXPORT ========= */
+$('#exp-btn').addEventListener('click',()=>{
+  if(!firms.length){toast('Nothing to export',false);return;}
+  const hdr=COLS.filter(c=>c.key!=='actions').map(c=>c.key).join(',');
+  const rows=firms.map(f=>COLS.filter(c=>c.key!=='actions')
+    .map(c=>`"${(f[c.key]||'').replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob=new Blob([hdr+'\n'+rows],{type:'text/csv'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='magistral_lp_gp.csv';a.click();
+});
+
+/* ========== AI DISCOVERY ========= */
+UI.aiBtn.addEventListener('click',async()=>{
+  const payload={
+    entityType:UI.aiType.value.trim(),
+    subType:UI.aiSub.value.trim()||'Other',
+    sector:UI.aiSec.value.trim()||'Sector Agnostic',
+    geo:UI.aiGeo.value.trim()||'Global'
+  };
+  showOverlay(true);
+  try{
+    const res=await fetch('/api/find-investors',{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify(payload)});
+    const data=await res.json();
+    if(!res.ok)throw new Error(data.error||res.statusText||'Gemini error');
+    if(data.added===0){toast('No new firms found',false);}
+    else{
+      firms.push(...data.newFirms);
+      rebuildFilters();render();
+      toast(`${data.added} firms added via Gemini`,true);
+    }
+  }catch(err){console.error(err);toast(err.message||'Something went wrong',false);}
+  finally{showOverlay(false);}
+});
+
+/* ========== INIT ========= */
 rebuildFilters();render();
 })();
 </script>
