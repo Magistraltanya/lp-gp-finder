@@ -100,25 +100,27 @@ Find 5 firms that match:
     }
     if (!Array.isArray(firmsAI)) throw new Error("Gemini did not return an array");
 
-    /* ── 4 ▸ Ensure table (one-liner, no trailing ;) ────────────── */
-    await DB.exec(`CREATE TABLE IF NOT EXISTS firms(
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      website TEXT UNIQUE,
-      firm_name TEXT,
-      entity_type TEXT,
-      sub_type TEXT,
-      address TEXT,
-      country TEXT,
-      company_linkedin TEXT,
-      about TEXT,
-      investment_strategy TEXT,
-      sector TEXT,
-      sector_details TEXT,
-      stage TEXT,
-      source TEXT,
-      validated INTEGER DEFAULT 0,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`);
+    /* ── 4 ▸ Ensure table ───────────────────────────────────────────── */
+await DB.exec(`
+  CREATE TABLE IF NOT EXISTS firms (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    website           TEXT UNIQUE,
+    firm_name         TEXT,
+    entity_type       TEXT,
+    sub_type          TEXT,
+    address           TEXT,
+    country           TEXT,
+    company_linkedin  TEXT,
+    about             TEXT,
+    investment_strategy TEXT,
+    sector            TEXT,
+    sector_details    TEXT,
+    stage             TEXT,
+    source            TEXT,
+    validated         INTEGER DEFAULT 0,
+    created_at        DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+`);                    //  ← the semicolon is now **inside** the string
 
     /* ── 5 ▸ Insert & dedupe —–––––––––––––––––––––––––––––––––––– */
     let added = 0;
