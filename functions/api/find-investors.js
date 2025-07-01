@@ -1,7 +1,7 @@
 /**
  * POST /api/find-investors
  * Body  : { entityType, subType, sector, geo }
- * Return: { added, newFirms }
+ * Return:  an array of the firms it just added
  */
 export async function onRequest({ request, env }) {
   const { GEMINI_KEY, DB } = env;
@@ -36,14 +36,12 @@ Return ONLY a JSON array where each object has keys:
         body: JSON.stringify(payload)
       }
     );
-
     if (!geminiRes.ok)
       throw new Error(`Gemini error ${geminiRes.status}`);
 
     let text =
       (await geminiRes.json())?.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
 
-    /* strip ``` wrappers if they appear */
     text = text.trim()
       .replace(/^```json/i, "")
       .replace(/^```/, "")
@@ -73,7 +71,7 @@ Return ONLY a JSON array where each object has keys:
       "created_at DATETIME DEFAULT CURRENT_TIMESTAMP);"
     );
 
-    /* ---------- step 4: insert rows ---------- */
+    /* ---------- step 4: insert new rows ---------- */
     const newFirms = [];
     for (const f of firms) {
       const website = (f.website || "").toLowerCase();
@@ -112,7 +110,8 @@ Return ONLY a JSON array where each object has keys:
       });
     }
 
-    return json({ added: newFirms.length, newFirms });
+    /* ---------- step 5: send the array back ---------- */
+    return json(newFirms);          // ← only the array, not an object
   } catch (err) {
     return json({ error: err.message }, 500);
   }
