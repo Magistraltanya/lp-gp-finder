@@ -8,6 +8,8 @@ export async function onRequest({ request, env }) {
   const { GEMINI_KEY, DB } = env;
 
   try {
+     // ⬇️ add this guard line
+    if (request.method !== "POST") return new Response("Use POST", { status: 405 });
     // ───────── step 1: grab the four parameters ─────────
     const { entityType, subType, sector, geo } = await request.json();
     if (!entityType || !subType || !sector || !geo) {
