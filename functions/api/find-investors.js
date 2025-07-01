@@ -5,10 +5,13 @@
  */
 export async function onRequestPost({ request, env }) {
   try {
-    /* ── ENV ───────────────────────────── */
+    /* ── ENV ─────────────────────────────────────────────── */
     const { GEMINI_KEY, DB } = env;
 
-    /* ── 1 ▸ parse + normalise input ───── */
+    /* ensure the variable exists for logging even on early failure */
+    let firmsAI = [];
+
+    /* ── 1 ▸ parse + normalise input ─────────────────────── */
     const b = await request.json().catch(() => ({}));
     let { entityType = "", subType = "", sector = "", geo = "" } = b;
 
@@ -46,7 +49,7 @@ export async function onRequestPost({ request, env }) {
     }
     if (!geo) return json({ error: "geo is required" }, 400);
 
-    /* ── 2 ▸ Gemini prompt ─────────────── */
+    /* ── 2 ▸ build Gemini prompt ─────────────────────────── */
     const PROMPT = `
 You are an expert LP/GP data analyst.
 Return ONLY a JSON array (no markdown). Follow exactly this schema:
@@ -76,48 +79,52 @@ Find 5 firms that match:
 • geography   : "${geo}"
 `;
 
-/* ---- 3 ▸ Call Gemini – with retry ----------------------------------- */
-async function callGemini(prompt) {
-  const url =
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent" +
-    `?key=${GEMINI_KEY}`;
+    /* ── 3 ▸ call Gemini with retry ───────────────────────── */
+    async function callGemini(prompt) {
+      const url =
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent" +
+        `?key=${GEMINI_KEY}`;
 
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const gRes = await fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: { responseMimeType: "application/json" }
-      })
-    });
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const gRes = await fetch(url, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ role: "user", parts: [{ text: prompt }] }],
+            generationConfig: { responseMimeType: "application/json" }
+          })
+        });
 
-    /* 200 OK and JSON?  ───────── */
-    if (gRes.ok) return gRes;
+        if (gRes.ok) return gRes;                // success
 
-    /* 503 / 502 / 500 ⇒ retry │ 4xx ⇒ break immediately */
-    if (gRes.status >= 500) {
-      const wait = attempt === 0 ? 250 : 750; // ms
-      await new Promise(r => setTimeout(r, wait));
-      continue;
+        if (gRes.status >= 500) {                // retryable
+          const wait = attempt === 0 ? 250 : 750;
+          await new Promise(r => setTimeout(r, wait));
+          continue;
+        }
+        throw new Error(`Gemini ${gRes.status}`); // 4xx or other
+      }
+      throw new Error("Gemini 503 (after 3 attempts)");
     }
-    throw new Error(`Gemini ${gRes.status}`);
-  }
-  throw new Error("Gemini 503 (after 3 attempts)");
-}
 
-const gRes = await callGemini(PROMPT);
-const gJson = await gRes.json();
-const raw   = gJson?.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
+    const gRes   = await callGemini(PROMPT);
+    const gJson  = await gRes.json();
+    const raw    = gJson?.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
 
+    try {
+      firmsAI = JSON.parse(raw);
+    } catch {
+      throw new Error("Gemini returned non-JSON");
+    }
+    if (!Array.isArray(firmsAI))
+      throw new Error("Gemini did not return an array");
 
-  /* ── 4 ▸ Ensure table ─────────────────────────────────────────── */
-await DB.exec(
-  `CREATE TABLE IF NOT EXISTS firms(id INTEGER PRIMARY KEY AUTOINCREMENT,website TEXT UNIQUE,firm_name TEXT,entity_type TEXT,sub_type TEXT,address TEXT,country TEXT,company_linkedin TEXT,about TEXT,investment_strategy TEXT,sector TEXT,sector_details TEXT,stage TEXT,source TEXT,validated INTEGER DEFAULT 0,created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`
-);
+    /* ── 4 ▸ ensure table exists ─────────────────────────── */
+    await DB.exec(
+      `CREATE TABLE IF NOT EXISTS firms(id INTEGER PRIMARY KEY AUTOINCREMENT,website TEXT UNIQUE,firm_name TEXT,entity_type TEXT,sub_type TEXT,address TEXT,country TEXT,company_linkedin TEXT,about TEXT,investment_strategy TEXT,sector TEXT,sector_details TEXT,stage TEXT,source TEXT,validated INTEGER DEFAULT 0,created_at DATETIME DEFAULT CURRENT_TIMESTAMP);`
+    );
 
-
-    /* ── 5 ▸ Insert & dedupe —–––––––––––––––––––––––––––––––––––– */
+    /* ── 5 ▸ insert & dedupe ─────────────────────────────── */
     let added = 0;
     const newFirms = [];
 
@@ -125,8 +132,9 @@ await DB.exec(
       const key = (f.website || f.firmName || "").toLowerCase();
       if (!key) continue;
 
-      const dup = await DB.prepare("SELECT 1 FROM firms WHERE website = ? LIMIT 1")
-                          .bind(key).first();
+      const dup = await DB.prepare(
+        "SELECT 1 FROM firms WHERE website = ? LIMIT 1"
+      ).bind(key).first();
       if (dup) continue;
 
       await DB.prepare(
@@ -160,13 +168,14 @@ await DB.exec(
     }
 
     return json({ added, newFirms });
+
   } catch (err) {
     console.error("find-investors error:", err);
     return json({ error: String(err.message || err) }, 500);
   }
 }
 
-/* helper */
+/* helper to build JSON Response */
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
