@@ -76,29 +76,40 @@ Find 5 firms that match:
 • geography   : "${geo}"
 `;
 
-    /* ── 3 ▸ Call Gemini ───────────────── */
-    const gRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: PROMPT }] }],
-          generationConfig: { responseMimeType: "application/json" }   // ✅ camel-case
-        })
-      }
-    );
+/* ---- 3 ▸ Call Gemini – with retry ----------------------------------- */
+async function callGemini(prompt) {
+  const url =
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent" +
+    `?key=${GEMINI_KEY}`;
 
-    if (!gRes.ok) throw new Error(`Gemini ${gRes.status}`);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const gRes = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: { responseMimeType: "application/json" }
+      })
+    });
 
-    const gJson = await gRes.json();
-    const raw   = gJson?.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
+    /* 200 OK and JSON?  ───────── */
+    if (gRes.ok) return gRes;
 
-    let firmsAI;
-    try { firmsAI = JSON.parse(raw); } catch {
-      throw new Error("Gemini returned non-JSON");
+    /* 503 / 502 / 500 ⇒ retry │ 4xx ⇒ break immediately */
+    if (gRes.status >= 500) {
+      const wait = attempt === 0 ? 250 : 750; // ms
+      await new Promise(r => setTimeout(r, wait));
+      continue;
     }
-    if (!Array.isArray(firmsAI)) throw new Error("Gemini did not return an array");
+    throw new Error(`Gemini ${gRes.status}`);
+  }
+  throw new Error("Gemini 503 (after 3 attempts)");
+}
+
+const gRes = await callGemini(PROMPT);
+const gJson = await gRes.json();
+const raw   = gJson?.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
+
 
     /* ── 4 ▸ Ensure table ───────────────────────────────────────────── */
 await DB.exec(`
