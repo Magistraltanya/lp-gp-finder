@@ -39,7 +39,7 @@
   .icon.del{color:#b60000}
   /* ---- OVERLAY / TOAST ---- */
   #overlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(255,255,255,.55);z-index:300}
-  .spinner{width:44px;height:44px;border:5px solid rgba(0,0,0,.12);border-top-color:var(--teal);border-radius:50%;animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)} }
+  .spinner{width:44px;height:44px;border:5px solid rgba(0,0,0,.12);border-top-color:var(--teal);border-radius:50%;animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
   #toast{position:fixed;top:22px;right:24px;z-index:600}
   .toast{padding:11px 17px;border-radius:8px;color:#fff;font-weight:600;margin-bottom:10px;box-shadow:var(--shadow);opacity:0;transform:translateY(-10px);transition:.3s}
   .toast.show{opacity:1;transform:none}.toast.ok{background:var(--teal)}.toast.err{background:#c0392b}
@@ -49,9 +49,10 @@
   .modal-box h3{font-size:18px;font-weight:700;margin-bottom:14px;color:var(--blue)}
   .modal-box table{width:100%;border-collapse:collapse;font-size:14px}
   .modal-box th,.modal-box td{padding:8px 10px;border-bottom:1px solid var(--border)}
-  /* Configure‑columns grid for perfect alignment */
-  #col-list{display:grid;grid-template-columns:auto 1fr;column-gap:8px;row-gap:6px;margin-top:6px}
-  #col-list input{margin:0}
+  /* Configure‑columns list */
+  #col-list{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+  #col-list li{padding:6px 10px;border:1px solid var(--border);border-radius:6px;cursor:pointer;text-align:center;user-select:none}
+  #col-list li.selected{background:var(--teal);color:#fff;border-color:var(--teal)}
   /* ---- QUICK FILTERS ---- */
   .panel.quick-filters label{display:block;font-size:13px;margin-bottom:4px;color:#344454}
   .panel.quick-filters select{margin-bottom:12px;width:100%}
@@ -111,7 +112,7 @@ const $=q=>document.querySelector(q),$$=q=>document.querySelectorAll(q);
 const UI={thead:$('#thead'),tbody:$('#tbody'),empty:$('#empty'),overlay:$('#overlay'),toast:$('#toast'),search:$('#search'),filterBtns:$$('.filter-buttons .btn'),colBtn:$('#col-btn'),colModal:$('#col-modal'),colList:$('#col-list'),ctModal:$('#ct-modal'),ctTitle:$('#ct-title'),ctBody:$('#ct-body'),qCountry:$('#q-country'),qSector:$('#q-sector'),qStage:$('#q-stage')};
 /* ---------- UTIL ---------- */
 const showOverlay=f=>UI.overlay.style.display=f?'flex':'none';
-const toast=(msg,ok=true)=>{const t=document.createElement('div');t.className=`toast ${ok?'ok':'err'}`;t.textContent=msg;UI.toast.appendChild(t);requestAnimationFrame(()=>t.classList.add('show'));setTimeout(()=>{t.classList.remove('show');t.addEventListener('transitionend',()=>t.remove());},3500);} ;
+const toast=(m,ok=true)=>{const t=document.createElement('div');t.className=`toast ${ok?'ok':'err'}`;t.textContent=m;UI.toast.appendChild(t);requestAnimationFrame(()=>t.classList.add('show'));setTimeout(()=>{t.classList.remove('show');t.addEventListener('transitionend',()=>t.remove());},3500);};
 const mapKey=k=>alias[k.toLowerCase().trim()]||k.trim().replace(/\s+/g,'');
 const populateSelect=(sel,vals)=>{const cur=sel.value;sel.innerHTML='<option value="">All</option>'+[...vals].sort().map(v=>`<option>${v}</option>`).join('');sel.value=cur;};
 /* ---------- RENDER ---------- */
@@ -127,9 +128,9 @@ UI.search.addEventListener('input',render);
 [UI.qCountry,UI.qSector,UI.qStage].forEach(sel=>sel.addEventListener('change',render));
 $('#q-clear').addEventListener('click',()=>{UI.qCountry.value=UI.qSector.value=UI.qStage.value='';render();});
 /* COLUMN MODAL */
-UI.colBtn.addEventListener('click',()=>{UI.colList.innerHTML='';COLS.forEach(c=>{if(c.key==='actions')return;const li=document.createElement('li');li.innerHTML=`<input type="checkbox" data-k="${c.key}" ${visible.has(c.key)?'checked':''}/> <span>${c.label}</span>`;UI.colList.appendChild(li);});UI.colModal.style.display='flex';});
+UI.colBtn.addEventListener('click',()=>{UI.colList.innerHTML='';COLS.forEach(c=>{if(c.key==='actions')return;const li=document.createElement('li');li.dataset.k=c.key;li.textContent=c.label;li.classList.toggle('selected',visible.has(c.key));UI.colList.appendChild(li);});UI.colModal.style.display='flex';});
 UI.colModal.addEventListener('click',e=>{if(e.target===UI.colModal||e.target.classList.contains('close'))UI.colModal.style.display='none';});
-UI.colList.addEventListener('change',e=>{const k=e.target.dataset.k;e.target.checked?visible.add(k):visible.delete(k);render();});
+UI.colList.addEventListener('click',e=>{const li=e.target.closest('li');if(!li)return;const k=li.dataset.k;if(visible.has(k)){visible.delete(k);li.classList.remove('selected');}else{visible.add(k);li.classList.add('selected');}render();});
 /* CONTACT & DELETE */
 UI.tbody.addEventListener('click',e=>{if(!e.target.classList.contains('icon'))return;const id=e.target.dataset.id;const rec=firms.find(x=>x.uid===id);if(!rec)return;const act=e.target.dataset.act;if(act==='contacts'){UI.ctTitle.textContent=`Contacts – ${rec.firmName}`;UI.ctBody.innerHTML=rec.contacts?.length?rec.contacts.map(c=>`<tr><td>${c.contactName||''}</td><td>${c.designation||''}</td><td>${c.email||''}</td><td>${c.linkedIn?`<a href='${c.linkedIn}' target='_blank'>Link</a>`:''}</td></tr>`).join(''):'<tr><td colspan="4" style="text-align:center;padding:14px">No contacts stored yet.</td></tr>';UI.ctModal.style.display='flex';}else if(confirm('Delete this entry?')){firms=firms.filter(x=>x.uid!==id);render();toast('Entry deleted');}});
 UI.ctModal.addEventListener('click',e=>{if(e.target===UI.ctModal||e.target.classList.contains('close'))UI.ctModal.style.display='none';});
