@@ -101,8 +101,14 @@ Use exact spellings from the allowed lists.
     }
 
     const gJson = await gRes.json();
-    let txt = gJson?.candidates?.[0]?.content?.parts?.[0]?.text ?? "[]";
-    txt = txt.replace(/^```[a-z]*\s*/i, "").replace(/```$/i, "").trim();
+   let txt = gJson?.candidates?.[0]?.content?.parts?.[0]?.text ?? '[]';
+txt = txt
+        .replace(/^```[\s\S]*?\n/, '')   // first triple-back-tick block start
+        .replace(/```$/, '')             // trailing fence
+        .replace(/,\s*}/g, '}')          // dangling commas
+        .replace(/,\s*]/g, ']')
+        .trim();
+
 
     let arr;
     try { arr = JSON.parse(txt); if (!Array.isArray(arr)) throw 0; }
