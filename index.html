@@ -224,7 +224,7 @@ UI.tbody.addEventListener('click',async e=>{
  if(act==='ct'){const row=firms.find(x=>x._id==id);UI.ctTitle.textContent=`Contacts – ${row?.firmName||''}`;
    UI.ctBody.innerHTML=row?.contacts?.length?row.contacts.map(c=>
      `<tr><td>${c.contactName||''}</td><td>${c.designation||''}</td><td>${c.email||''}</td>
-      <td>${c.linkedIn?`<a href="${c.linkedIn}" target="_blank">Link</a>`:''}</td></tr>`).join('')
+      <td>${c.linkedIn?`<a href="${c.linkedIn}" target="_blank">Link</a>`:''}</td><td>${c.contactNumber||''}</td></tr>`).join('')
       :'<tr><td colspan="4" style="text-align:center;padding:14px">No contacts yet</td></tr>';
    UI.ctModal.style.display='flex';return;}
  if(!confirm('Delete?'))return;
