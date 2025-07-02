@@ -1,3 +1,5 @@
+import { ensureTable } from './_ensureTable.js';
+
 /**
  * POST /api/find-investors
  * Body  : { entityType, subType, sector, geo }
@@ -6,14 +8,15 @@
 export async function onRequestPost({ request, env }) {
   try {
     const { GEMINI_KEY, DB } = env;
+    await ensureTable(DB);                     // ← one-liner schema guarantee
 
-    /* ── parse + lower helpers ────────────────────────────── */
-    const body = await request.json().catch(() => ({}));
-    let { entityType = "", subType = "", sector = "", geo = "" } = body;
-    const lc = s => (s || "").toLowerCase().trim();
+    /* ── parse + helpers ─────────────────── */
+    const b = await request.json().catch(() => ({}));
+    let { entityType="", subType="", sector="", geo="" } = b;
+    const lc = s => (s||"").toLowerCase().trim();
 
-    /* ── fixed vocab maps ─────────────────────────────────── */
-    const TYPES = ["LP", "GP", "Broker", "Other"];
+    /* ── vocab maps ──────────────────────── */
+    const TYPES = ["LP","GP","Broker","Other"];
     const LP = { "endowment":"Endowment Fund","sovereign":"Sovereign Wealth Fund","bank":"Bank","insurance":"Insurance Company",
                  "university":"University","pension":"Pension Fund","economic development":"Economic Development Agency",
                  "family":"Family Office","foundation":"Foundation","wealth":"Wealth Management Firm","hni":"HNI",
@@ -31,144 +34,90 @@ export async function onRequestPost({ request, env }) {
                      "communication":"Communication Services","utilities":"Utilities","real estate":"Real Estate",
                      "sector agnostic":"Sector Agnostic" };
 
-    /* ── normalise params ────────────────────────────────── */
-    entityType = TYPES.find(t => lc(t) === lc(entityType)) || "LP";
+    /* ── normalise input ─────────────────── */
+    entityType = TYPES.find(t=>lc(t)===lc(entityType)) || "LP";
+    if(entityType==="LP"){
+      const k=Object.keys(LP).find(k=>lc(subType).includes(k)); subType=k?LP[k]:"Other";
+    }else if(entityType==="GP"){
+      const k=Object.keys(GP).find(k=>lc(subType).includes(k)); subType=k?GP[k]:"Other";
+    }else subType="Other";
+    {const k=Object.keys(SECTOR).find(k=>lc(sector).includes(k)); sector=k?SECTOR[k]:"Sector Agnostic";}
+    if(!geo) return json({ error:"geo is required" },400);
 
-    if (entityType === "LP") {
-      const k = Object.keys(LP).find(k => lc(subType).includes(k));
-      subType = k ? LP[k] : "Other";
-    } else if (entityType === "GP") {
-      const k = Object.keys(GP).find(k => lc(subType).includes(k));
-      subType = k ? GP[k] : "Other";
-    } else subType = "Other";
-
-    { const k = Object.keys(SECTOR).find(k => lc(sector).includes(k));
-      sector = k ? SECTOR[k] : "Sector Agnostic"; }
-
-    if (!geo) return json({ error: "geo is required" }, 400);
-
-    /* ── prompt ──────────────────────────────────────────── */
+    /* ── Gemini prompt ───────────────────── */
     const PROMPT = `
-Return ONLY a JSON array (no markdown, no fences) of exactly 5 firms.
+Return ONLY a JSON array (no markdown) of exactly 5 firms.
+If a field is unknown write "N/A" (never leave empty).
 
-Each object must contain **every** field below; if truly unknown write "N/A" (never leave empty):
-
-{
- "firmName":"",
- "entityType":"",
- "subType":"",
- "address":"",
- "country":"",
- "website":"",
- "companyLinkedIn":"",
- "about":"",
- "investmentStrategy":"",
- "sector":"",
- "sectorDetails":"",
- "stage":"",
- "contacts":[]
-}
+Required keys:
+firmName · entityType · subType · address · country · website · companyLinkedIn · about · investmentStrategy · sector · sectorDetails · stage · contacts
 
 Constraints:
 • entityType  = "${entityType}"
 • subType     = "${subType}"
 • sector      = "${sector}"
-• country     includes "${geo}"
-Use exact spellings from the allowed lists for entityType, subType, sector, stage.
+• country     contains "${geo}"
 `;
 
-    /* ── Gemini call with 2 retries ───────────────────────── */
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`;
+    /* ── Gemini call (2 retries) ─────────── */
+    const url=`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`;
     let gRes;
-    for (let i = 0; i < 3; i++) {
-      gRes = await fetch(url, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: PROMPT }] }],
-          generationConfig: { responseMimeType: "application/json" }
-        })
-      });
-      if (gRes.ok) break;
-      if (gRes.status >= 500) await new Promise(r => setTimeout(r, 400 * (i + 1)));
+    for(let i=0;i<3;i++){
+      gRes=await fetch(url,{method:"POST",headers:{'content-type':'application/json'},
+        body:JSON.stringify({contents:[{role:"user",parts:[{text:PROMPT}]}],
+                             generationConfig:{responseMimeType:"application/json"}})});
+      if(gRes.ok)break;
+      if(gRes.status>=500)await new Promise(r=>setTimeout(r,400*(i+1)));
       else throw new Error(`Gemini ${gRes.status}`);
     }
 
-    const gJ = await gRes.json();
-    let txt = gJ?.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
-    txt = txt.replace(/^```[a-z]*\s*/i, "").replace(/```$/,"").trim();
+    const gJ=await gRes.json();
+    let raw=gJ?.candidates?.[0]?.content?.parts?.[0]?.text||"[]";
+    raw=raw.replace(/^```[a-z]*\s*/i,"").replace(/```$/,"").trim();
 
-    let arr;
-    try { arr = JSON.parse(txt); if (!Array.isArray(arr)) throw 0; }
-    catch { return json({ error: "Gemini bad JSON" }, 500); }
+    let arr; try{arr=JSON.parse(raw); if(!Array.isArray(arr))throw 0;}
+    catch{return json({ error:"Gemini bad JSON" },500);}
 
-    /* ── ensure table / column ───────────────────────────── */
-    await DB.exec(`CREATE TABLE IF NOT EXISTS firms(
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      website TEXT UNIQUE,
-      firm_name TEXT,
-      entity_type TEXT,
-      sub_type TEXT,
-      address TEXT,
-      country TEXT,
-      company_linkedin TEXT,
-      about TEXT,
-      investment_strategy TEXT,
-      sector TEXT,
-      sector_details TEXT,
-      stage TEXT,
-      source TEXT,
-      validated INTEGER DEFAULT 0,
-      contacts_json TEXT DEFAULT '[]',
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );`);
-    try { await DB.exec(`ALTER TABLE firms ADD COLUMN contacts_json TEXT`);} catch {}
-
-    const stmt = await DB.prepare(
+    /* ── insert (dedupe) ─────────────────── */
+    const ins = await DB.prepare(
       `INSERT OR IGNORE INTO firms
        (website,firm_name,entity_type,sub_type,address,country,company_linkedin,about,investment_strategy,
         sector,sector_details,stage,source,validated,contacts_json)
-       VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,'Gemini',0,'[]')`
+       VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,'Gemini',0,'[]')`
     );
 
-    /* ── insert ──────────────────────────────────────────── */
-    let added = 0, out = [];
-    for (const f0 of arr) {
-      /* back-fill critical blanks with normalised params */
-      const f = {
-        firmName: f0.firmName || "N/A",
-        entityType: f0.entityType && f0.entityType !== "N/A" ? f0.entityType : entityType,
-        subType: f0.subType && f0.subType !== "N/A" ? f0.subType : subType,
-        address: f0.address || "N/A",
-        country: f0.country || geo,
-        website: f0.website || "N/A",
-        companyLinkedIn: f0.companyLinkedIn || "N/A",
-        about: f0.about || "N/A",
-        investmentStrategy: f0.investmentStrategy || "N/A",
-        sector: f0.sector && f0.sector !== "N/A" ? f0.sector : sector,
-        sectorDetails: f0.sectorDetails || "N/A",
-        stage: f0.stage || "N/A",
-        contacts: Array.isArray(f0.contacts) ? f0.contacts : []
+    let added=0, newRows=[];
+    for(const x0 of arr){
+      const x={                             // back-fill blanks
+        firmName:x0.firmName||"N/A",
+        entityType:x0.entityType!=="N/A" ? x0.entityType : entityType,
+        subType:x0.subType!=="N/A" ? x0.subType : subType,
+        address:x0.address||"N/A",
+        country:x0.country||geo,
+        website:x0.website||"N/A",
+        companyLinkedIn:x0.companyLinkedIn||"N/A",
+        about:x0.about||"N/A",
+        investmentStrategy:x0.investmentStrategy||"N/A",
+        sector:x0.sector!=="N/A"?x0.sector:sector,
+        sectorDetails:x0.sectorDetails||"N/A",
+        stage:x0.stage||"N/A"
       };
-
-      const res = await stmt.bind(
-        f.website, f.firmName, f.entityType, f.subType, f.address, f.country,
-        f.companyLinkedIn, f.about, f.investmentStrategy,
-        f.sector, f.sectorDetails, f.stage
+      const res=await ins.bind(
+        x.website,x.firmName,x.entityType,x.subType,x.address,x.country,
+        x.companyLinkedIn,x.about,x.investmentStrategy,x.sector,x.sectorDetails,x.stage
       ).run();
-
-      if (res.meta.changes) {  // inserted
-        out.push({ id: res.meta.last_row_id, source:"Gemini", validated:false, ...f });
+      if(res.meta.changes){
+        newRows.push({ id:res.meta.last_row_id, validated:false, source:"Gemini", contacts:[], ...x });
         added++;
       }
     }
 
-    return json({ added, newFirms: out });
+    return json({ added, newFirms:newRows });
 
-  } catch (err) {
-    console.error(err);
-    return json({ error: String(err.message || err) }, 500);
+  } catch (e) {
+    console.error(e);
+    return json({ error:String(e.message||e) },500);
   }
 }
 
-const json = (d, s = 200) => new Response(JSON.stringify(d), { status: s, headers: { "content-type": "application/json" } });
+const json = (d,s=200)=>new Response(JSON.stringify(d),{status:s,headers:{'content-type':'application/json'}});
