@@ -57,24 +57,38 @@ export async function onRequestPost({ request, env }) {
 
     if (!geo) return json({ error: 'geo is required' }, 400);
 
-    /* ── Gemini prompt ─────────────────────────────────── */
+    /* ── Gemini prompt (IMPROVED) ────────────────────── */
     const PROMPT = `
-Return **exactly five (5)** firms strictly as plain JSON (no markdown).
-All keys below must be present and non-empty:
+      Generate a JSON array containing exactly five (5) objects.
+      DO NOT use any markdown formatting (e.g., \`\`\`json).
+      Your entire response must be only the raw JSON array, starting with '[' and ending with ']'.
 
-{
- firmName, entityType, subType, address, country, website, companyLinkedIn,
- about, investmentStrategy, sector, sectorDetails, stage, contacts:[]
-}
+      Each object must represent an investment firm with the following keys:
+      {
+        "firmName": "...",
+        "entityType": "${entityType}",
+        "subType": "${subType}",
+        "address": "...",
+        "country": "...",
+        "website": "...",
+        "companyLinkedIn": "...",
+        "about": "...",
+        "investmentStrategy": "...",
+        "sector": "${sector}",
+        "sectorDetails": "...",
+        "stage": "...",
+        "contacts": []
+      }
 
-Constraints (MUST hold for every object):
-  entityType  = "${entityType}"
-  subType     = "${subType}"
-  sector      = "${sector}"
-  country     contains "${geo}"
+      The following constraints MUST be met for every firm:
+      - "entityType" must be exactly "${entityType}".
+      - "subType" must be exactly "${subType}".
+      - "sector" must be exactly "${sector}".
+      - "country" must contain the substring "${geo}".
+      - All string values must be non-empty.
 
-Use exactly the spellings given in the allowed lists.
-`;
+      Return valid JSON only.
+    `;
 
     /* ── Gemini call with simple retry ─────────────────── */
     const url =
@@ -88,26 +102,34 @@ Use exactly the spellings given in the allowed lists.
         headers: { 'content-type':'application/json' },
         body   : JSON.stringify({
           contents         : [{ role:'user', parts:[{ text:PROMPT }] }],
-          generationConfig : { responseMimeType:'application/json' }
+          generationConfig : { responseMimeType:'application/json', temperature: 0.5 }
         })
       });
       if (res.ok) break;
       if (res.status >= 500) await new Promise(r => setTimeout(r, 400 * (i + 1)));
-      else throw new Error(`Gemini ${res.status}`);
+      else throw new Error(`Gemini API Error: ${res.status}`);
     }
 
     const gJson = await res.json();
-    let txt = gJson?.candidates?.[0]?.content?.parts?.[0]?.text ?? '[]';
-    txt = txt
-      .replace(/^```[\s\S]*?\n/, '')   // leading ```lang
-      .replace(/```$/, '')             // trailing fence
-      .replace(/,\s*}/g, '}')          // trailing commas
-      .replace(/,\s*]/g, ']')
-      .trim();
-
+    
+    /* ── Robust JSON Parsing (IMPROVED) ────────────────── */
     let arr;
-    try { arr = JSON.parse(txt); if (!Array.isArray(arr)) throw 0; }
-    catch { return json({ error:'Gemini bad JSON' }, 500); }
+    try {
+      let txt = gJson?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+      const startIndex = txt.indexOf('[');
+      const endIndex = txt.lastIndexOf(']');
+      if (startIndex === -1 || endIndex === -1) {
+        throw new Error("Response did not contain a JSON array.");
+      }
+      const jsonString = txt.substring(startIndex, endIndex + 1);
+      arr = JSON.parse(jsonString);
+      if (!Array.isArray(arr)) throw new Error("Parsed data is not an array.");
+    } catch(e) {
+      console.error("Gemini JSON parse error:", e.message);
+      console.error("Original Gemini response:", gJson?.candidates?.[0]?.content?.parts?.[0]?.text);
+      return json({ error:'Gemini bad JSON' }, 500);
+    }
+
 
     /* ── insert ───────────────────────────────────────── */
     const stmt = await DB.prepare(`
@@ -119,9 +141,9 @@ Use exactly the spellings given in the allowed lists.
 
     const out = [];
     for (const f of arr) {
-      if (!(f.website && f.firmName)) continue;   // must have unique key
+      if (!(f.website && f.firmName)) continue;
 
-      const res = await stmt.bind(
+      const runResult = await stmt.bind(
         f.website.trim(), f.firmName.trim(), f.entityType.trim(), f.subType.trim(),
         f.address || 'N/A', f.country || geo,
         f.companyLinkedIn || 'N/A', f.about || 'N/A',
@@ -129,8 +151,8 @@ Use exactly the spellings given in the allowed lists.
         f.sectorDetails || 'Niche not stated', f.stage || 'Stage Agnostic'
       ).run();
 
-      if (res.meta.changes)
-        out.push({ id: res.meta.last_row_id, validated:false, source:'Gemini', contacts:[], ...f });
+      if (runResult.meta.changes)
+        out.push({ id: runResult.meta.last_row_id, validated:false, source:'Gemini', contacts:[], ...f });
     }
 
     return json({ added: out.length, newFirms: out });
