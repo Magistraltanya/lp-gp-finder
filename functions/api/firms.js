@@ -60,8 +60,9 @@ export async function onRequest ({ request, env }) {
           investment_strategy: r.investmentStrategy|| '',
           sector            : r.sector            || '',
           sector_details    : r.sectorDetails     || '',
-          stage             : r.stage             || ''
-        }, contacts: [] });
+          stage             : r.stage             || '',
+          contacts   : JSON.parse(r.contacts_json || '[]')
+       });
 
       /* contact object – include only if at least one field present */
       const hasContact =
