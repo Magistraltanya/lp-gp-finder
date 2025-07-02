@@ -1,86 +1,98 @@
 import { ensureTable } from './_ensureTable.js';
 
 /**
- *  GET  /api/firms   – list every row (incl. contacts[])
- *  POST /api/firms   – bulk upload; body = JSON array produced in the browser
+ *  GET  /api/firms   – list rows (contacts_json → contacts[])
+ *  POST /api/firms   – bulk upload; body = JSON array created in the browser
  *
- *  Upload logic:
- *    • body is streamed – large XLSX files no longer crash the Worker
- *    • rows are grouped by uniqueKey  (website || firmName)
- *    • first row gives the scalar company fields
- *    • every row can supply one contact  → merged into contacts[]
- *    • a single INSERT-OR-IGNORE per firm keeps the DB unique
+ *  Upload flow
+ *  ────────────
+ *   1. Stream body (≤ 10 MB) so huge XLSX exports do not crash the worker.
+ *   2. Parse → array of flat rows.
+ *   3. Group by unique key (website || firmName) :
+ *        ─ first row supplies scalar company fields
+ *        ─ every row may add one contact   →   merged into contacts[ ]
+ *   4. INSERT … ON IGNORE once per company → DB stays unique
+ *   5. Return the rows that were really inserted so the UI can append them.
  */
 export async function onRequest ({ request, env }) {
   const { DB } = env;
-  await ensureTable(DB);
+  await ensureTable(DB);                    // make sure schema exists & up-to-date
 
-  /* ───────────── GET ───────────── */
+  /* ────────────────────────────── GET ────────────────────────────── */
   if (request.method === 'GET') {
     const rs  = await DB.prepare('SELECT * FROM firms ORDER BY id DESC').all();
-    const out = rs.results.map(r => ({ ...r, contacts: JSON.parse(r.contacts_json || '[]') }));
+    const out = rs.results.map(r => ({
+      ...r,
+      contacts : JSON.parse(r.contacts_json || '[]')   // ← give the UI its array
+    }));
     return json(out);
   }
 
-  /* ───────────── POST (bulk upload) ───────────── */
+  /* ───────────────────────────── POST (upload) ───────────────────── */
   if (request.method === 'POST') {
-    /* 1 ◂ stream the body (≤ 10 MB) into a string ───────── */
+    /* 1 ▸ read the streamed body – protect against giant files */
     let raw = '';
-    const reader = request.body.getReader();
+    const rdr = request.body.getReader();
     while (true) {
-      const { value, done } = await reader.read();
+      const { value, done } = await rdr.read();
       if (done) break;
       raw += new TextDecoder().decode(value);
-      if (raw.length > 10_000_000)             // 10 MB guard – big enough for ~ 80 k rows
-        return json({ error:'Upload too large – please split the file.' }, 413);
+      if (raw.length > 10_000_000)              // ≈ 80 000 rows of plain JSON text
+        return json({ error : 'File too large – please split it.' }, 413);
     }
 
-    /* 2 ◂ parse & basic validation ─────────────────────── */
+    /* 2 ▸ parse & basic validation */
     let rows;
     try { rows = JSON.parse(raw); if (!Array.isArray(rows) || !rows.length) throw 0; }
-    catch { return json({ error:'Body must be a non-empty JSON array.' }, 400); }
+    catch { return json({ error : 'Body must be a non-empty JSON array.' }, 400); }
 
-    /* 3 ◂ group rows → company + contacts[] ─────────────── */
-    const buckets = new Map();                      // key → { data:{…}, contacts:[] }
+    /* 3 ▸ bucket rows → 1 firm + N contacts */
+    const buckets = new Map();                 // key → { data:{…}, contacts:[…] }
 
     for (const r of rows) {
+      /* unique key */
       const key = (r.website || r.firmName || '').toLowerCase().trim();
-      if (!key) continue;                           // skip if nothing unique
+      if (!key) continue;                      // skip completely blank lines
 
-      if (!buckets.has(key))
-        buckets.set(key, { data: {                  // company scalar fields (first row wins)
-          website           : r.website           || '',
-          firm_name         : r.firmName          || '',
-          entity_type       : r.entityType        || '',
-          sub_type          : r.subType           || '',
-          address           : r.address           || '',
-          country           : r.country           || '',
-          company_linkedin  : r.companyLinkedIn   || '',
-          about             : r.about             || '',
-          investment_strategy: r.investmentStrategy|| '',
-          sector            : r.sector            || '',
-          sector_details    : r.sectorDetails     || '',
-          stage             : r.stage             || '',
-          contacts   : JSON.parse(r.contacts_json || '[]')
-       });
+      /* first time we see this key → create container               */
+      if (!buckets.has(key)) {
+        buckets.set(key, {
+          /* scalar company fields – take them from the *first* row only */
+          data : {
+            website            : r.website            || '',
+            firm_name          : r.firmName           || '',
+            entity_type        : r.entityType         || '',
+            sub_type           : r.subType            || '',
+            address            : r.address            || '',
+            country            : r.country            || '',
+            company_linkedin   : r.companyLinkedIn    || '',
+            about              : r.about              || '',
+            investment_strategy: r.investmentStrategy || '',
+            sector             : r.sector             || '',
+            sector_details     : r.sectorDetails      || '',
+            stage              : r.stage              || ''
+          },
+          contacts : []                          // will be filled below
+        });
+      }
 
-      /* contact object – include only if at least one field present */
+      /* append one contact if the row contains any contact info */
       const hasContact =
         r.contactName || r.designation || r.email || r.linkedIn || r.contactNumber;
       if (hasContact) {
         buckets.get(key).contacts.push({
-          contactName : r.contactName   || '',
-          designation : r.designation   || '',
-          email       : r.email         || '',
-          linkedIn    : r.linkedIn      || '',
-          contactNumber: r.contactNumber|| ''
+          contactName   : r.contactName   || '',
+          designation   : r.designation   || '',
+          email         : r.email         || '',
+          linkedIn      : r.linkedIn      || '',
+          contactNumber : r.contactNumber || ''
         });
       }
     }
 
-    if (!buckets.size) return json({ inserted: [] });
+    if (!buckets.size) return json({ inserted : [] });
 
-    /* 4 ◂ prepared statement ───────────────────────────── */
+    /* 4 ▸ prepared statement – one INSERT per firm */
     const stmt = await DB.prepare(`
       INSERT OR IGNORE INTO firms
       (website,firm_name,entity_type,sub_type,address,country,company_linkedin,about,investment_strategy,
@@ -90,9 +102,9 @@ export async function onRequest ({ request, env }) {
 
     const inserted = [];
 
-    /* 5 ◂ write each company once, with aggregated contacts */
+    /* 5 ▸ insert */
     for (const bucket of buckets.values()) {
-      const d  = bucket.data;
+      const d   = bucket.data;
       const res = await stmt.bind(
         d.website, d.firm_name, d.entity_type, d.sub_type, d.address, d.country,
         d.company_linkedin, d.about, d.investment_strategy,
@@ -100,19 +112,21 @@ export async function onRequest ({ request, env }) {
         JSON.stringify(bucket.contacts)
       ).run();
 
-      if (res.meta.changes) {
+      if (res.meta.changes) {                  // row really inserted
         inserted.push({
-          id        : res.meta.last_row_id,
-          source    : 'Upload',
-          validated : true,
-          contacts  : bucket.contacts,
-          ...d,                // camel-cased keys expected by the UI
-          firmName         : d.firm_name,
-          entityType       : d.entity_type,
-          subType          : d.sub_type,
-          companyLinkedIn  : d.company_linkedin,
+          id         : res.meta.last_row_id,
+          source     : 'Upload',
+          validated  : true,
+          contacts   : bucket.contacts,
+
+          /* camel-case aliases expected by the front-end  */
+          firmName          : d.firm_name,
+          entityType        : d.entity_type,
+          subType           : d.sub_type,
+          companyLinkedIn   : d.company_linkedin,
           investmentStrategy: d.investment_strategy,
-          sectorDetails    : d.sector_details
+          sectorDetails     : d.sector_details,
+          ...d
         });
       }
     }
@@ -120,10 +134,14 @@ export async function onRequest ({ request, env }) {
     return json({ inserted });
   }
 
-  /* ───────────── everything else ───────────── */
-  return json({ error:'Method not allowed' }, 405);
+  /* ───────────────────── any other verb ───────────────────── */
+  return json({ error : 'Method not allowed' }, 405);
 }
 
-/* helper */
-const json = (d, s = 200) =>
-  new Response(JSON.stringify(d), { status:s, headers:{ 'content-type':'application/json' } });
+/* utility */
+function json (data, status = 200) {
+  return new Response(
+    JSON.stringify(data),
+    { status, headers: { 'content-type' : 'application/json' } }
+  );
+}
