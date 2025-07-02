@@ -253,19 +253,75 @@ UI.aiBtn.addEventListener('click',async()=>{
  }catch(e){toast(e.message||'Gemini error',false);}finally{showO(false);}
 });
 
-/* —— Upload & persist (unchanged logic) —— */
-UI.fileIn.addEventListener('change',e=>{
- const f=e.target.files[0];if(!f)return;showO(true);
- const rd=new FileReader();rd.onload=async ev=>{
-  try{
-   const wb=XLSX.read(new Uint8Array(ev.target.result),{type:'array'});
-   const raw=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});
-   const norm=raw.map(r=>{const o={};for(const [k,v] of Object.entries(r)){const key=(alias[k.toLowerCase()]||k).replace(/\s+/g,'');o[key]=v;}return o;});
-   const res=await fetch('/api/firms',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(norm)});
-   const {inserted}=await res.json();firms.push(...inserted.map(mapRow));buildFilters();render();toast(`${inserted.length} uploaded`,true);
-  }catch(err){toast(err.message||'Upload failed',false);}finally{showO(false);e.target.value='';};};
- rd.readAsArrayBuffer(f);
-});
+// ==========  UPLOAD  ==========
+ UI.fileIn.addEventListener('change', e => {
+   const f = e.target.files[0];
+   if (!f) return;
+   showO(true);
+
+   const rd = new FileReader();
+   rd.onload = async ev => {
+     try {
+       const wb   = XLSX.read(new Uint8Array(ev.target.result), { type:'array' });
+       const raw  = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval:'' });
+
+       /* ---- normalise keys ---- */
+       const rows = raw.map(r => {
+         const obj = {}, contact = {};
+         for (const [k, v] of Object.entries(r)) {
+           const key = (alias[k.toLowerCase()] || k).replace(/\s+/g, '');
+           (contactKeys.has(key) ? contact : obj)[key] = v;
+         }
+         if (Object.values(contact).some(Boolean)) obj.contacts = [contact];
+         return obj;
+       });
+
+       /* ---- merge duplicates (website OR firmName) ---- */
+       const byWeb = new Map();
+       for (const r of rows) {
+         const key = (r.website || r.firmName || '').toLowerCase();
+         if (!key) continue;
+
+         if (!byWeb.has(key)) {
+           byWeb.set(key, { ...r, contacts: r.contacts || [] });
+         } else {
+           const tgt = byWeb.get(key);
+           if (r.contacts) tgt.contacts.push(...r.contacts);
+           // fill any empty scalar fields
+           for (const k of ['firmName','entityType','subType','address','country',
+                             'companyLinkedIn','about','investmentStrategy',
+                             'sector','sectorDetails','stage']) {
+             if (!tgt[k] && r[k]) tgt[k] = r[k];
+           }
+         }
+       }
+
+       const deduped = [...byWeb.values()];
+
+       /* ---- POST once ---- */
+       const res = await fetch('/api/firms', {
+         method : 'POST',
+         headers: { 'content-type':'application/json' },
+         body   : JSON.stringify(deduped)
+       });
+       const { inserted = [], error } = await res.json();
+       if (error) throw new Error(error);
+
+       firms.push(...inserted.map(mapRow));
+       buildFilters();  render();
+       toast(`${inserted.length} companies added`, true);
+
+     } catch (err) {
+       console.error(err);
+       toast(err.message || 'Upload failed', false);
+     } finally {
+       showO(false);
+       e.target.value = '';   // reset <input type=file>
+     }
+   };
+   rd.readAsArrayBuffer(f);
+ });
+
 
 /* —— export —— */
 $('#exp-btn').addEventListener('click',()=>{
