@@ -1,25 +1,32 @@
+/*  GET  /api/firms           → list
+ *  POST /api/firms           → bulk upload (streamed)
+ */
 import { ensureTable } from './_ensureTable.js';
 
-/**
- *  GET  /api/firms         → full list
- *  POST /api/firms         → bulk upload [{ …, contacts:[…] }]
- *                            returns { inserted:[rowObj] }
- */
 export async function onRequest({ request, env }) {
   const { DB } = env;
   await ensureTable(DB);
 
-  /* ─────────── GET ─────────── */
-  if (request.method === "GET") {
-    const rows = await DB.prepare("SELECT * FROM firms ORDER BY id DESC").all();
-    return json(rows.results.map(r => ({ ...r, contacts: JSON.parse(r.contacts_json || "[]") })));
+  /* ---------- list ---------- */
+  if (request.method === 'GET') {
+    const rs = await DB.prepare('SELECT * FROM firms ORDER BY id DESC').all();
+    return json(rs.results.map(r => ({ ...r, contacts: JSON.parse(r.contacts_json || '[]') })));
   }
 
-  /* ─────────── POST upload ─────────── */
-  if (request.method === "POST") {
-    let list;
-    try { list = await request.json(); } catch { return json({ error: "body must be JSON array" }, 400); }
-    if (!Array.isArray(list) || !list.length) return json({ error: "array expected" }, 400);
+  /* ---------- upload (streaming) ---------- */
+  if (request.method === 'POST') {
+    const reader = request.body?.getReader?.();
+    if (!reader) return json({ error: 'stream expected' }, 400);
+
+    // assemble the body safely (handles large XLSX → JSON)
+    const chunks = [];
+    let done, value;
+    while ({ done, value } = await reader.read(), !done) chunks.push(value);
+    const body = new TextDecoder().decode(Buffer.concat(chunks));
+
+    let arr;
+    try { arr = JSON.parse(body); } catch { return json({ error: 'body must be JSON array' }, 400); }
+    if (!Array.isArray(arr) || !arr.length) return json({ error: 'array expected' }, 400);
 
     const ins = await DB.prepare(`
       INSERT OR IGNORE INTO firms
@@ -29,33 +36,25 @@ export async function onRequest({ request, env }) {
     `);
 
     const inserted = [];
-    for (const r of list) {
-      const key = (r.website || r.firmName || "").toLowerCase();
-      if (!key) continue;                                            // skip if no unique key
-
+    for (const r of arr) {
+      const uniq = (r.website || r.firmName || '').toLowerCase();
+      if (!uniq) continue;                           // skip rows with no key
       try {
         const res = await ins.bind(
-          r.website || "", r.firmName || "", r.entityType || "", r.subType || "",
-          r.address || "", r.country || "", r.companyLinkedIn || "", r.about || "",
-          r.investmentStrategy || "", r.sector || "", r.sectorDetails || "", r.stage || "",
-          JSON.stringify(r.contacts || [])
+          r.website || '', r.firmName || '', r.entityType || '', r.subType || '',
+          r.address || '', r.country || '', r.companyLinkedIn || '',
+          r.about || '', r.investmentStrategy || '', r.sector || '',
+          r.sectorDetails || '', r.stage || '', JSON.stringify(r.contacts || [])
         ).run();
-
-        if (res.meta.changes) inserted.push({ id: res.meta.last_row_id, source: "Upload", validated: true, ...r });
-
-      } catch (e) {
-        console.error("DB insert error (upload row skipped):", e);   // keeps loop alive
-      }
+        if (res.meta.changes)
+          inserted.push({ id: res.meta.last_row_id, source: 'Upload', validated: true, ...r });
+      } catch { /* duplicate website or other error → ignore row */ }
     }
-
     return json({ inserted });
   }
 
-  return json({ error: "Method not allowed" }, 405);
+  return json({ error: 'Method not allowed' }, 405);
 }
 
-/* helper */
-const json = (d, s = 200) => new Response(JSON.stringify(d), {
-  status: s,
-  headers: { "content-type": "application/json" }
-});
+const json = (d, s = 200) =>
+  new Response(JSON.stringify(d), { status: s, headers: { 'content-type': 'application/json' } });
