@@ -1,52 +1,40 @@
+import { ensureTable } from './_ensureTable.js';
+
 /**
- *  GET  /api/firms          → list rows
- *  POST /api/firms          → bulk upload   body = JSON array [{ …, contacts:[…] }]
- *
- *  NOTE ▸ we are **not** streaming any more – the plain body parser is fast
- *         and avoids the Buffer-undefined crash you just saw.
+ *  GET  /api/firms         → all rows
+ *  POST /api/firms         → bulk upload, body = JSON array
  */
 export async function onRequest({ request, env }) {
   const { DB } = env;
+  await ensureTable(DB);
 
-  /* ─────── make sure the table exists (idempotent) ─────── */
-  await DB.exec(`
-    CREATE TABLE IF NOT EXISTS firms(
-      id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-      website             TEXT UNIQUE,
-      firm_name           TEXT,
-      entity_type         TEXT,
-      sub_type            TEXT,
-      address             TEXT,
-      country             TEXT,
-      company_linkedin    TEXT,
-      about               TEXT,
-      investment_strategy TEXT,
-      sector              TEXT,
-      sector_details      TEXT,
-      stage               TEXT,
-      source              TEXT,
-      validated           INTEGER DEFAULT 0,
-      contacts_json       TEXT DEFAULT '[]',
-      created_at          DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-  `);
-
-  /* ---------- GET  → list everything ---------- */
+  /* ─────────── GET ─────────── */
   if (request.method === 'GET') {
     const rs  = await DB.prepare('SELECT * FROM firms ORDER BY id DESC').all();
     const out = rs.results.map(r => ({ ...r, contacts: JSON.parse(r.contacts_json || '[]') }));
     return json(out);
   }
 
-  /* ---------- POST → Excel upload (already JSON on the FE) ---------- */
+  /* ─────────── POST (stream) ───────────
+     The body can be >10 MB when the Excel → JSON array is large.
+     We therefore read the request as text in small chunks and parse at the end.
+  */
   if (request.method === 'POST') {
-    let arr;
-    try {
-      arr = await request.json();               // body is small; OK to buffer
-      if (!Array.isArray(arr) || !arr.length) throw 0;
-    } catch { return json({ error: 'Body must be a non-empty JSON array' }, 400); }
+    let raw = '';
+    const reader = request.body.getReader();
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      raw += new TextDecoder().decode(value);
+      if (raw.length > 5_000_000)       // ~5 MB guard: enough for ~40 k rows
+        return json({ error:'Upload too large – please split the file' }, 413);
+    }
 
-    const ins = await DB.prepare(`
+    let list;
+    try { list = JSON.parse(raw); if (!Array.isArray(list) || !list.length) throw 0; }
+    catch { return json({ error:'Body must be a non-empty JSON array' }, 400); }
+
+    const stmt = await DB.prepare(`
       INSERT OR IGNORE INTO firms
       (website,firm_name,entity_type,sub_type,address,country,company_linkedin,about,investment_strategy,
        sector,sector_details,stage,source,validated,contacts_json)
@@ -54,12 +42,12 @@ export async function onRequest({ request, env }) {
     `);
 
     const inserted = [];
-    for (const r of arr) {
+    for (const r of list) {
       const key = (r.website || r.firmName || '').toLowerCase();
-      if (!key) continue;                       // skip row with no unique key
+      if (!key) continue;
 
       try {
-        const res = await ins.bind(
+        const res = await stmt.bind(
           r.website || '',           r.firmName || '',
           r.entityType || '',        r.subType || '',
           r.address || '',           r.country || '',
@@ -70,17 +58,17 @@ export async function onRequest({ request, env }) {
         ).run();
 
         if (res.meta.changes)
-          inserted.push({ id: res.meta.last_row_id, source: 'Upload', validated: true, ...r });
+          inserted.push({ id: res.meta.last_row_id, source:'Upload', validated:true, ...r });
 
-      } catch (e) { console.error('DB insert skipped row:', e); }
+      } catch (e) { console.error('Insert skipped row:', e); }
     }
 
     return json({ inserted });
   }
 
-  return json({ error: 'Method not allowed' }, 405);
+  return json({ error:'Method not allowed' }, 405);
 }
 
 /* helper */
 const json = (d, s = 200) =>
-  new Response(JSON.stringify(d), { status: s, headers: { 'content-type': 'application/json' } });
+  new Response(JSON.stringify(d), { status:s, headers:{ 'content-type':'application/json' } });
