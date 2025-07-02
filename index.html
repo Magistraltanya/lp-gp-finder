@@ -15,7 +15,7 @@
 /* —— theme / layout ——————————————————————————————— */
 :root{--blue:#013463;--teal:#00958f;--grey:#687683;--bg:#f5f7fa;--white:#fff;--border:#d6dde5;--shadow:0 2px 6px rgba(0,0,0,.08);--font:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif}
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:var(--font);background:var(--bg);color:#1f2d3d;display:flex;min-height:100vh;overflow:hidden}
+body{font-family:var(--font);background:var(--bg);color:#1f2d3d;display:flex;min-height:100vh;overflow:auto}
 a{color:var(--blue);text-decoration:none}
 .sidebar{flex:0 0 310px;background:var(--white);border-right:1px solid var(--border);padding:22px;display:flex;flex-direction:column;gap:26px;overflow:auto}
 .main{flex:1;display:flex;flex-direction:column;padding:22px;position:relative}
@@ -38,12 +38,11 @@ th,td{padding:8px 10px;border-bottom:1px solid var(--border);white-space:nowrap;
 th{background:var(--bg);color:var(--blue);font-weight:600;text-transform:uppercase;position:sticky;top:0;z-index:3}
 tr:hover td{background:#f0f4f8}
 .row-new{background:#fffbe7}
-.icon{cursor:pointer;font-size:16px;color:var(--blue);margin-right:8px}
-.icon.del{color:#b60000}
+.icon{cursor:pointer;font-size:16px;color:var(--blue)}
+.icon.del{color:#b60000;margin-left:4px}
 /* overlay / toast */
 #overlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(255,255,255,.55);z-index:300}
-.spinner{width:44px;height:44px;border:5px solid rgba(0,0,0,.12);border-top-color:var(--teal);border-radius:50%;animation:spin 1s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
+.spinner{width:44px;height:44px;border:5px solid rgba(0,0,0,.12);border-top-color:var(--teal);border-radius:50%;animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
 #toast{position:fixed;top:22px;right:24px;z-index:600}
 .toast{padding:11px 17px;border-radius:8px;color:#fff;font-weight:600;margin-bottom:10px;box-shadow:var(--shadow);opacity:0;transform:translateY(-10px);transition:.3s}
 .toast.show{opacity:1;transform:none}.toast.ok{background:var(--teal)}.toast.err{background:#c0392b}
@@ -57,7 +56,7 @@ tr:hover td{background:#f0f4f8}
 #col-list li{padding:6px 10px;border:1px solid var(--border);border-radius:6px;cursor:pointer;text-align:center;user-select:none}
 #col-list li.selected{background:var(--teal);color:#fff;border-color:var(--teal)}
 .panel.quick-filters label{display:block;font-size:13px;margin-bottom:4px;color:#344454}
-.panel.quick-filters select{margin-bottom:12px;width:100%}
+.panel.quick-filters select{margin-bottom:12px}
 .panel.manage-list{display:flex;flex-direction:column;gap:10px}
 .panel.manage-list .btn{width:100%}
 </style>
@@ -94,6 +93,7 @@ tr:hover td{background:#f0f4f8}
   <div class="panel manage-list"><h2>Manage List</h2>
     <label class="btn btn-sec" for="file-in">Upload Excel/CSV</label>
     <input type="file" id="file-in" accept=".xlsx,.xls,.csv" hidden>
+    <button id="del-bulk" class="btn btn-sec">Delete Selected</button>
     <button id="exp-btn" class="btn btn-sec">Export CSV</button>
   </div>
 </aside>
@@ -110,161 +110,159 @@ tr:hover td{background:#f0f4f8}
 
 <div id="toast"></div>
 
-<!-- modals -->
+<!-- column modal -->
 <div class="modal" id="col-modal"><div class="modal-box" style="width:360px">
   <h3>Visible Columns</h3><ul id="col-list"></ul>
   <button class="btn btn-pri close" style="margin-top:14px;width:100%">Done</button>
 </div></div>
 
-<div class="modal" id="ct-modal"><div class="modal-box">
-  <h3 id="ct-title">Contacts</h3>
-  <table><thead><tr><th>Name</th><th>Designation</th><th>Email</th><th>LinkedIn</th></tr></thead><tbody id="ct-body"></tbody></table>
-  <button class="btn btn-pri close" style="margin-top:16px;width:120px">Close</button>
-</div></div>
-
 <!-- ============  SCRIPT  ============ -->
 <script>
 (()=>{/* ---------- constants ---------- */
-const COLS=[{key:'sn',label:'#'},{key:'entityType',label:'LP/GP/Broker'},{key:'firmName',label:'Firm Name'},
-{key:'subType',label:'Type'},{key:'address',label:'Address'},{key:'country',label:'Country'},
-{key:'website',label:'Website'},{key:'companyLinkedIn',label:'Firm LinkedIn'},{key:'about',label:'About'},
-{key:'investmentStrategy',label:'Strategy'},{key:'sector',label:'Sector'},{key:'sectorDetails',label:'Sector Details'},
+const COLS=[{key:'chk',label:' '},{key:'sn',label:'#'},{key:'entityType',label:'LP/GP/Broker'},
+{key:'firmName',label:'Firm Name'},{key:'subType',label:'Type'},{key:'country',label:'Country'},
+{key:'website',label:'Website'},{key:'sector',label:'Sector'},
 {key:'stage',label:'Stage'},{key:'source',label:'Source'},{key:'actions',label:''}];
+
+const defaultVis=['chk','sn','entityType','firmName','subType','country','website','sector','stage','source','actions'];
+const vis=new Set(JSON.parse(localStorage.getItem('visibleCols')||'null')||defaultVis);
 
 const alias={"lp/gp/broker":"entityType","firm name":"firmName","name":"firmName","type":"subType","subtype":"subType",
 "address":"address","country":"country","website":"website","company linkedin":"companyLinkedIn","firm linkedin":"companyLinkedIn",
-"about":"about","investment strategy":"investmentStrategy","strategy":"investmentStrategy","sector":"sector",
-"sector details":"sectorDetails","stage":"stage","source":"source","contact name":"contactName","designation":"designation",
-"linkedin":"linkedIn","email":"email","contact number":"contactNumber"};
-
+"about":"about","investment strategy":"investmentStrategy","strategy":"investmentStrategy","sector":"sector","sector details":"sectorDetails",
+"stage":"stage","source":"source","contact name":"contactName","designation":"designation","linkedin":"linkedIn",
+"email":"email","contact number":"contactNumber"};
 const contactKeys=new Set(['contactName','designation','linkedIn','email','contactNumber']);
-const visible=new Set(JSON.parse(localStorage.getItem('visibleCols')||'null')
-                      ||['sn','entityType','firmName','subType','country','website','sector','stage','source','actions']);
 
-/* ---------- dom helpers ---------- */
+/* ---------- dom ---------- */
 const $=q=>document.querySelector(q),$$=q=>document.querySelectorAll(q);
 const UI={thead:$('#thead'),tbody:$('#tbody'),empty:$('#empty'),overlay:$('#overlay'),toast:$('#toast'),search:$('#search'),
 filterBtns:$$('.filter-buttons .btn'),qCountry:$('#q-country'),qSector:$('#q-sector'),qStage:$('#q-stage'),
 colBtn:$('#col-btn'),colModal:$('#col-modal'),colList:$('#col-list'),
-aiType:$('#ai-type'),aiSub:$('#ai-sub'),aiSec:$('#ai-sec'),aiGeo:$('#ai-geo'),aiBtn:$('#ai-btn'),fileIn:$('#file-in')};
+aiType:$('#ai-type'),aiSub:$('#ai-sub'),aiSec:$('#ai-sec'),aiGeo:$('#ai-geo'),aiBtn:$('#ai-btn'),
+fileIn:$('#file-in'),delBulk:$('#del-bulk')};
 
-const showOverlay=f=>UI.overlay.style.display=f?'flex':'none';
+const showO=f=>UI.overlay.style.display=f?'flex':'none';
 const toast=(m,ok=true)=>{const t=document.createElement('div');t.className=`toast ${ok?'ok':'err'}`;t.textContent=m;
  UI.toast.appendChild(t);requestAnimationFrame(()=>t.classList.add('show'));
- setTimeout(()=>{t.classList.remove('show');t.addEventListener('transitionend',()=>t.remove());},3300);};
+ setTimeout(()=>{t.classList.remove('show');t.addEventListener('transitionend',()=>t.remove());},3200);};
 
 /* ---------- data ---------- */
 let firms=[];
-const mapRow=r=>({_id:r.id,uid:`d${r.id}`,firmName:r.firm_name,entityType:r.entity_type,subType:r.sub_type,address:r.address,
-country:r.country,website:r.website,companyLinkedIn:r.company_linkedin,about:r.about,
-investmentStrategy:r.investment_strategy,sector:r.sector,sectorDetails:r.sector_details,stage:r.stage,
-source:r.source,validated:!!r.validated,contacts:[]});
+const mapRow=r=>({_id:r.id,firmName:r.firm_name,entityType:r.entity_type,subType:r.sub_type,
+country:r.country,website:r.website,sector:r.sector,stage:r.stage,source:r.source});
 
-/* ---------- initial load ---------- */
-(async()=>{showOverlay(true);
- try{const rows=await (await fetch('/api/firms')).json();firms=rows.map(mapRow);}
- catch{toast('Could not load saved rows',false);}
- finally{rebuildFilters();render();showOverlay(false);}
+/* ---------- load existing rows ---------- */
+(async()=>{showO(true);
+ try{const rows=await (await fetch('/api/firms')).json();firms=rows.map(mapRow);}catch{toast('Load failed',false);}
+ finally{buildFilters();render();showO(false);}
 })();
 
-/* ---------- filters ---------- */
-let filter='All';
-function rebuildFilters(){
- const c=new Set(),s=new Set(),st=new Set();
- firms.forEach(f=>{if(f.country)c.add(f.country);
-   if(f.sector)f.sector.split(',').forEach(x=>s.add(x.trim()));
-   if(f.stage)st.add(f.stage);});
+/* ---------- filter helpers ---------- */
+let view='All';
+function buildFilters(){const c=new Set(),s=new Set(),st=new Set();
+ firms.forEach(f=>{if(f.country)c.add(f.country);if(f.sector)f.sector.split(',').forEach(x=>s.add(x.trim()));if(f.stage)st.add(f.stage);});
  const fill=(sel,set)=>{const cur=sel.value;sel.innerHTML='<option value="">All</option>'+[...set].sort().map(v=>`<option>${v}</option>`).join('');sel.value=cur;};
- fill(UI.qCountry,c);fill(UI.qSector,s);fill(UI.qStage,st);
-}
-UI.filterBtns.forEach(b=>b.addEventListener('click',()=>{UI.filterBtns.forEach(x=>x.classList.remove('active'));b.classList.add('active');filter=b.dataset.f;render();}));
-UI.search.addEventListener('input',render);
-[UI.qCountry,UI.qSector,UI.qStage].forEach(sel=>sel.addEventListener('change',render));
+ fill(UI.qCountry,c);fill(UI.qSector,s);fill(UI.qStage,st);}
+
+UI.filterBtns.forEach(b=>b.addEventListener('click',()=>{UI.filterBtns.forEach(x=>x.classList.remove('active'));b.classList.add('active');view=b.dataset.f;render();}));
+[UI.qCountry,UI.qSector,UI.qStage,UI.search].forEach(el=>el.addEventListener('input',render));
 $('#q-clear').addEventListener('click',()=>{UI.qCountry.value=UI.qSector.value=UI.qStage.value='';render();});
 
-/* ---------- render table ---------- */
+/* ---------- render ---------- */
 function render(){
  UI.thead.innerHTML=UI.tbody.innerHTML='';
- const trH=document.createElement('tr');
- COLS.forEach(c=>{if(visible.has(c.key)){const th=document.createElement('th');th.textContent=c.label;trH.appendChild(th);}});
- UI.thead.appendChild(trH);
+ /* header */
+ const thRow=document.createElement('tr');
+ COLS.forEach(c=>{if(!vis.has(c.key))return;
+   const th=document.createElement('th');
+   thRow.appendChild(th);
+   if(c.key==='chk')th.innerHTML='<input type="checkbox" id="sel-all">';
+   else th.textContent=c.label;});
+ UI.thead.appendChild(thRow);
 
- const term=UI.search.value.toLowerCase(),fc=UI.qCountry.value,fs=UI.qSector.value.toLowerCase(),fst=UI.qStage.value;
- const rows=firms.filter(f=>(filter==='All'||f.entityType===filter)&&(!fc||f.country===fc)&&(!fst||f.stage===fst)
-  &&(!fs||f.sector.toLowerCase().split(',').some(x=>x.trim()===fs))
-  &&Object.values(f).some(v=>String(v).toLowerCase().includes(term)));
+ const rows=firms.filter(f=>(view==='All'||f.entityType===view)
+   &&(!UI.qCountry.value||f.country===UI.qCountry.value)
+   &&(!UI.qSector.value||f.sector.split(',').map(x=>x.trim()).includes(UI.qSector.value))
+   &&(!UI.qStage.value||f.stage===UI.qStage.value)
+   &&Object.values(f).some(v=>String(v).toLowerCase().includes(UI.search.value.toLowerCase())));
  UI.empty.style.display=rows.length?'none':'block';
 
- rows.forEach((f,i)=>{
-  const tr=document.createElement('tr');if(f.source==='Gemini'&&!f.validated)tr.classList.add('row-new');
-  COLS.forEach(c=>{if(!visible.has(c.key))return;const td=document.createElement('td');
-    let v=f[c.key]||'';if(c.key==='sn')v=i+1;
-    if((c.key==='website'||c.key==='companyLinkedIn')&&v)td.innerHTML=`<a href="${v.startsWith('http')?v:`https://${v}`}" target="_blank">${v}</a>`;
-    else if(c.key==='actions')td.innerHTML=`<span class="icon" data-id="${f._id||''}" data-act="del">🗑️</span>`;
-    else td.textContent=v;td.title=v;tr.appendChild(td);});
-  UI.tbody.appendChild(tr);});
+ rows.forEach((f,i)=>{const tr=document.createElement('tr');
+   COLS.forEach(c=>{if(!vis.has(c.key))return;
+     const td=document.createElement('td');
+     if(c.key==='chk')td.innerHTML=`<input type="checkbox" class="rowchk" data-id="${f._id}">`;
+     else if(c.key==='sn')td.textContent=i+1;
+     else if(c.key==='website')td.innerHTML=`<a href="${f.website.startsWith('http')?f.website:`https://${f.website}`}" target="_blank">${f.website}</a>`;
+     else if(c.key==='actions')td.innerHTML=`<span class="icon del" data-id="${f._id}">🗑️</span>`;
+     else td.textContent=f[c.key]||'';tr.appendChild(td);});
+   UI.tbody.appendChild(tr);});
 }
 
 /* ---------- column modal ---------- */
 UI.colBtn.addEventListener('click',()=>{
  UI.colList.innerHTML='';COLS.forEach(c=>{if(c.key==='actions')return;
-   const li=document.createElement('li');li.dataset.k=c.key;li.textContent=c.label;
-   li.classList.toggle('selected',visible.has(c.key));UI.colList.appendChild(li);});
+   const li=document.createElement('li');li.textContent=c.label;li.dataset.k=c.key;
+   li.classList.toggle('selected',vis.has(c.key));UI.colList.appendChild(li);});
  UI.colModal.style.display='flex';});
 UI.colModal.addEventListener('click',e=>{if(e.target===UI.colModal||e.target.classList.contains('close'))UI.colModal.style.display='none';});
-UI.colList.addEventListener('click',e=>{
- const li=e.target.closest('li');if(!li)return;const k=li.dataset.k;
- visible.has(k)?visible.delete(k):visible.add(k);li.classList.toggle('selected');
- localStorage.setItem('visibleCols',JSON.stringify([...visible]));render();
-});
+UI.colList.addEventListener('click',e=>{const li=e.target.closest('li');if(!li)return;const k=li.dataset.k;
+ vis.has(k)?vis.delete(k):vis.add(k);li.classList.toggle('selected');
+ localStorage.setItem('visibleCols',JSON.stringify([...vis]));render();});
 
-/* ---------- permanent delete ---------- */
+/* ---------- select-all ---------- */
+UI.thead.addEventListener('change',e=>{if(e.target.id!=='sel-all')return;
+ UI.tbody.querySelectorAll('.rowchk').forEach(cb=>cb.checked=e.target.checked);});
+
+/* ---------- delete single ---------- */
 UI.tbody.addEventListener('click',async e=>{
- if(!e.target.dataset.act)return;
- const id=e.target.dataset.id;
- if(!confirm('Delete permanently?'))return;
- if(id) await fetch(`/api/firms/${id}`,{method:'DELETE'}).catch(()=>{});
- firms=firms.filter(f=>String(f._id)!==id);render();toast('Entry deleted');
-});
+ if(!e.target.classList.contains('del'))return;
+ const id=e.target.dataset.id;if(!confirm('Delete?'))return;
+ await fetch(`/api/firms/${id}`,{method:'DELETE'}).catch(()=>{});
+ firms=firms.filter(x=>x._id!=id);render();toast('Deleted',true);});
+
+/* ---------- delete selected ---------- */
+UI.delBulk.addEventListener('click',async()=>{
+ const ids=[...UI.tbody.querySelectorAll('.rowchk:checked')].map(cb=>cb.dataset.id);
+ if(!ids.length){toast('Nothing selected',false);return;}
+ if(!confirm(`Delete ${ids.length} entries?`))return;
+ await Promise.all(ids.map(id=>fetch(`/api/firms/${id}`,{method:'DELETE'}).catch(()=>{})));
+ firms=firms.filter(x=>!ids.includes(String(x._id)));render();toast('Deleted',true);});
 
 /* ---------- AI discovery ---------- */
 UI.aiBtn.addEventListener('click',async()=>{
  const body={entityType:UI.aiType.value.trim(),subType:UI.aiSub.value.trim(),sector:UI.aiSec.value.trim(),geo:UI.aiGeo.value.trim()};
- showOverlay(true);
+ showO(true);
  try{
    const res=await fetch('/api/find-investors',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
    const d=await res.json();if(!res.ok)throw new Error(d.error||res.statusText);
    firms.push(...d.newFirms.map(x=>x.id?mapRow({...x,firm_name:x.firmName}):x));
-   rebuildFilters();render();toast(`${d.added} firms added`,true);
- }catch(err){toast(err.message||'Gemini error',false);}
- finally{showOverlay(false);}
+   buildFilters();render();toast(`${d.added} firms added`,true);
+ }catch(err){toast(err.message||'Gemini error',false);}finally{showO(false);}
 });
 
 /* ---------- upload & persist ---------- */
 UI.fileIn.addEventListener('change',e=>{
- const f=e.target.files[0];if(!f)return;showOverlay(true);
- const rd=new FileReader();
- rd.onload=async ev=>{
+ const f=e.target.files[0];if(!f)return;showO(true);
+ const rd=new FileReader();rd.onload=async ev=>{
   try{
    const wb=XLSX.read(new Uint8Array(ev.target.result),{type:'array'});
-   const rows0=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});
-   const norm=rows0.map(r=>{const o={};for(const [k,v] of Object.entries(r)){const key=(alias[k.toLowerCase()]||k).replace(/\s+/g,'');o[key]=v;}return o;});
-   const up=await fetch('/api/firms',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(norm)});
-   const {inserted}=await up.json();firms.push(...inserted.map(mapRow));
-   rebuildFilters();render();toast(`${inserted.length} uploaded`,true);
-  }catch(err){toast(err.message||'Upload failed',false);}
-  finally{showOverlay(false);e.target.value='';};
- };
+   const raw=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});
+   const norm=raw.map(r=>{const o={};for(const [k,v] of Object.entries(r)){const key=(alias[k.toLowerCase()]||k).replace(/\s+/g,'');o[key]=v;}return o;});
+   const res=await fetch('/api/firms',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(norm)});
+   const {inserted}=await res.json();firms.push(...inserted.map(mapRow));buildFilters();render();toast(`${inserted.length} uploaded`,true);
+  }catch(err){toast(err.message||'Upload failed',false);}finally{showO(false);e.target.value='';};};
  rd.readAsArrayBuffer(f);
 });
 
 /* ---------- export ---------- */
 $('#exp-btn').addEventListener('click',()=>{
  if(!firms.length){toast('Nothing to export',false);return;}
- const hdr=COLS.filter(c=>c.key!=='actions').map(c=>c.key).join(',');
- const rows=firms.map(f=>COLS.filter(c=>c.key!=='actions').map(c=>`"${(f[c.key]||'').replace(/"/g,'""')}"`).join(',')).join('\n');
- const blob=new Blob([hdr+'\n'+rows],{type:'text/csv'});const a=document.createElement('a');
- a.href=URL.createObjectURL(blob);a.download='magistral_lp_gp.csv';a.click();
+ const hdr=COLS.filter(c=>c.key!=='actions'&&vis.has(c.key)).map(c=>c.key).join(',');
+ const rows=firms.map(f=>COLS.filter(c=>c.key!=='actions'&&vis.has(c.key))
+   .map(c=>`"${(f[c.key]||'').replace(/"/g,'""')}"`).join(',')).join('\n');
+ const blob=new Blob([hdr+'\n'+rows],{type:'text/csv'});
+ const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='magistral_lp_gp.csv';a.click();
 });
 })();
 </script>
