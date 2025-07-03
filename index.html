@@ -7,7 +7,7 @@
 <style>
 :root{--blue-dark:#0A2342;--gold:#B89E5A;--blue-light:#2C6EAF;--grey-text:#5a6474;--bg:#f8f9fa;--white:#fff;--border:#e9ecef;--shadow:0 4px 12px rgba(0,0,0,.06);--shadow-hover:0 6px 16px rgba(0,0,0,.1);--font:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;--radius:8px}
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:var(--font);background:var(--bg);color:var(--blue-dark);display:flex;min-height:100vh;overflow:hidden}
+body{font-family:var(--font);background:var(--bg);color:var(--blue-dark);display:flex;height:100vh;overflow:hidden}
 a{color:var(--blue-light);text-decoration:none}
 a:hover{color:var(--gold)}
 .sidebar{flex:0 0 310px;background:var(--white);border-right:1px solid var(--border);padding:22px;display:flex;flex-direction:column;gap:26px;overflow-y:auto}
@@ -22,15 +22,11 @@ a:hover{color:var(--gold)}
 .filter-buttons .active{background:var(--blue-dark);color:#fff}
 input,select{width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:var(--radius);font-size:14px;background:var(--white)}
 input:focus,select:focus{outline:none;border-color:var(--blue-light);box-shadow:0 0 0 3px rgba(44,110,175,.15)}
-.table-wrap{flex-grow:1;background:var(--white);border:1px solid var(--border);border-radius:var(--radius);overflow:auto;box-shadow:var(--shadow);min-height:0}
-.table{width:100%;min-width:1800px;border-collapse:collapse;font-size:13px}
-th,td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:middle;text-align:left}
-th,td{max-width:250px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-th.col-sn,td.col-sn{max-width:50px;text-align:center}
-th.col-chk,td.col-chk{max-width:40px}
-th.col-actions,td.col-actions{max-width:100px}
+.table-wrap{flex:1;background:var(--white);border:1px solid var(--border);border-radius:var(--radius);overflow:auto;box-shadow:var(--shadow);min-height:0}
+.table{width:100%;min-width:1800px;border-collapse:collapse;font-size:13px;table-layout:fixed}
+th,td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:middle;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 td.expandable{cursor:pointer}
-td.expanded{white-space:normal;max-width:400px}
+td.expanded{white-space:normal;overflow:visible;word-wrap:break-word}
 th{background:#f8f9fa;color:var(--grey-text);font-weight:600;text-transform:uppercase;position:sticky;top:0;z-index:3;letter-spacing:.5px}
 tr{transition:background-color .2s ease-in-out}
 tr:hover td{background:#f1f5f9}
@@ -56,12 +52,6 @@ tr:hover td{background:#f1f5f9}
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:500}
 .modal-box{background:#fff;border-radius:var(--radius);padding:24px;width:92%;max-width:820px;max-height:85%;overflow:auto;box-shadow:var(--shadow);display:flex;flex-direction:column}
 .modal-box h3{font-size:18px;font-weight:600;margin-bottom:14px;color:var(--blue-dark); border-bottom:1px solid var(--border); padding-bottom:10px;flex-shrink:0}
-.modal-box .table-wrap{border:1px solid var(--border); border-radius:8px; overflow:auto; max-height: 60vh; margin-bottom:20px;}
-.modal-box table{width:100%;border-collapse:collapse;font-size:14px;}
-.modal-box th,.modal-box td{padding:10px 12px;border-bottom:1px solid var(--border); white-space:normal;text-align:left;vertical-align:middle}
-.modal-box th {background: var(--bg); color: var(--blue-dark); font-weight:600; position:sticky; top:0;}
-.modal-box tr:last-child td {border-bottom:none;}
-.modal-box .close-btn-wrap {margin-top:auto; display:flex; justify-content:flex-end;flex-shrink:0}
 #col-list{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
 #col-list li{padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;text-align:center;user-select:none}
 #col-list li.selected{background:var(--blue-dark);color:#fff;border-color:var(--blue-dark)}
@@ -114,7 +104,7 @@ tr:hover td{background:#f1f5f9}
             <span>Rows per page:</span>
             <select id="rows-per-page">
                 <option>25</option>
-                <option>50</option>
+                <option selected>50</option>
                 <option>100</option>
             </select>
         </div>
@@ -136,10 +126,10 @@ tr:hover td{background:#f1f5f9}
 
 <script>
 (()=>{
-const COLS=[{key:'chk',label:' '},{key:'sn',label:'#'},{key:'entityType',label:'LP/GP/Broker'},{key:'firmName',label:'Firm Name'},{key:'subType',label:'Type'},{key:'address',label:'Address'},{key:'country',label:'Country'},{key:'website',label:'Website'},{key:'companyLinkedIn',label:'Firm LinkedIn'},{key:'about',label:'About'},{key:'investmentStrategy',label:'Strategy'},{key:'sector',label:'Sector'},{key:'sectorDetails',label:'Sector Details'},{key:'stage',label:'Stage'},{key:'source',label:'Source'},{key:'actions',label:''}];
+const COLS=[{key:'chk',label:' ',width:'40px'},{key:'sn',label:'#',width:'50px'},{key:'entityType',label:'LP/GP/Broker',width:'120px'},{key:'firmName',label:'Firm Name',width:'200px'},{key:'subType',label:'Type',width:'150px'},{key:'address',label:'Address',width:'300px'},{key:'country',label:'Country',width:'120px'},{key:'website',label:'Website',width:'200px'},{key:'companyLinkedIn',label:'Firm LinkedIn',width:'120px'},{key:'about',label:'About',width:'300px'},{key:'investmentStrategy',label:'Strategy',width:'300px'},{key:'sector',label:'Sector',width:'150px'},{key:'sectorDetails',label:'Sector Details',width:'200px'},{key:'stage',label:'Stage',width:'150px'},{key:'source',label:'Source',width:'100px'},{key:'actions',label:'',width:'80px'}];
 const defaultVis=['chk','sn','entityType','firmName','subType','country','website','sector','stage','source','actions'];
 const vis=new Set(JSON.parse(localStorage.getItem('visibleCols')||'null')||defaultVis);
-const alias={"lp/gp/broker":"entityType", "type":"subType", "s.no.":"sn", "lp/gp":"entityType", "lp":"entityType", "gp":"entityType","firm name":"firmName","name":"firmName","subtype":"subType","address":"address","country":"country","website":"website","company linkedin":"companyLinkedIn","firm linkedin":"companyLinkedIn","about the company":"about","about":"about","investment strategy":"investmentStrategy","strategy":"investmentStrategy","sector":"sector","sector details":"sectorDetails","stage":"stage","stage preference":"stage","source":"source","contact name":"contactName","designation":"designation","linkedin":"linkedIn","email":"email","contact number":"contactNumber"};
+const alias={"lp/gp/broker":"entityType", "type":"subType", "s.no.":"sn", "lp/gp":"entityType", "lp":"entityType", "gp":"entityType","firm name":"firmName","name":"firmName","subtype":"subType","address":"address","country":"country","website":"website","company linkedin":"companyLinkedIn","firm linkedin":"companyLinkedIn","about the company":"about","about":"about","investment strategy":"investmentStrategy","strategy":"strategy","sector":"sector","sector details":"sectorDetails","stage":"stage","stage preference":"stage","source":"source","contact name":"contactName","designation":"designation","linkedin":"linkedIn","email":"email","contact number":"contactNumber"};
 const contactKeys=new Set(['contactName','designation','linkedIn','email','contactNumber']);
 
 const $=q=>document.querySelector(q),$$=q=>document.querySelectorAll(q);
@@ -185,7 +175,7 @@ function render(){
     UI.thead.innerHTML = UI.tbody.innerHTML = '';
 
     const trH=document.createElement('tr');
-    COLS.forEach(c=>{if(!vis.has(c.key))return; const th=document.createElement('th'); th.className = `col-${c.key}`; if(c.key==='chk')th.innerHTML='<input type="checkbox" id="sel-all">'; else th.textContent=c.label;trH.appendChild(th);});
+    COLS.forEach(c=>{if(!vis.has(c.key))return; const th=document.createElement('th'); th.style.width = c.width; if(c.key==='chk')th.innerHTML='<input type="checkbox" id="sel-all">'; else th.textContent=c.label;trH.appendChild(th);});
     UI.thead.appendChild(trH);
 
     const startIndex = (currentPage - 1) * rowsPerPage;
@@ -196,17 +186,16 @@ function render(){
         if (f.isNew) { tr.classList.add('row-new'); delete f.isNew; }
         COLS.forEach(c=>{if(!vis.has(c.key))return;
             const td=document.createElement('td');
-            td.className = `col-${c.key}`;
-            const expandableCols = new Set(['about', 'investmentStrategy', 'sectorDetails', 'address']);
+            const expandableCols = new Set(['about', 'investmentStrategy', 'sectorDetails', 'address', 'firmName']);
             if (expandableCols.has(c.key)) {
                 td.classList.add('expandable');
             }
             switch(c.key){
-                case 'chk': td.innerHTML=`<input type="checkbox" class="rowchk" data-id="${f._id}">`;break;
                 case 'sn':  td.textContent = startIndex + i + 1; break;
                 case 'website': td.innerHTML=f.website?`<a href="${f.website.startsWith('http')?f.website:`https://${f.website}`}" target="_blank">${f.website}</a>`:'';break;
                 case 'companyLinkedIn': td.innerHTML=f.companyLinkedIn?`<a href="${f.companyLinkedIn.startsWith('http')?f.companyLinkedIn:`https://${f.companyLinkedIn}`}" target="_blank">View Profile</a>`:'';break;
                 case 'actions': td.innerHTML=`<span class="icon" title="Contacts" data-act="ct" data-id="${f._id}">👥<span class="count">${f.contacts.length}</span></span><span class="icon del" title="Delete" data-act="del" data-id="${f._id}">🗑️</span>`;break;
+                case 'chk': td.innerHTML=`<input type="checkbox" class="rowchk" data-id="${f._id}">`;break;
                 default: td.textContent=f[c.key]||'';
             }
             td.title = String(td.textContent || '').trim();tr.appendChild(td);
@@ -224,13 +213,7 @@ function renderPagination(totalRows) {
     if (totalPages <= 1) return;
 
     const createButton = (text, page, disabled = false, active = false) => {
-        if(text === '...') {
-            const ellipsis = document.createElement('span');
-            ellipsis.textContent = '...';
-            ellipsis.className = 'page-btn';
-            ellipsis.style.border='none'; ellipsis.style.background='none';
-            return ellipsis;
-        }
+        if(text === '...') { const el = document.createElement('span'); el.textContent = '...'; el.className = 'page-btn'; el.style.border='none'; el.style.background='none'; return el; }
         const btn = document.createElement('button');
         btn.className = 'page-btn';
         if(active) btn.classList.add('active');
@@ -243,12 +226,12 @@ function renderPagination(totalRows) {
     UI.paginationContainer.appendChild(createButton('‹ Prev', currentPage - 1, currentPage === 1));
     const pagesToShow = [];
     if (totalPages <= 7) { for(let i=1; i<=totalPages; i++) pagesToShow.push(i); }
-    else { pagesToShow.push(1); if (currentPage > 4) pagesToShow.push('...'); for(let i = Math.max(2, currentPage - 2); i <= Math.min(totalPages - 1, currentPage + 2); i++) pagesToShow.push(i); if (currentPage < totalPages - 3) pagesToShow.push('...'); pagesToShow.push(totalPages); }
+    else { pagesToShow.push(1); if (currentPage > 3) pagesToShow.push('...'); for(let i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) pagesToShow.push(i); if (currentPage < totalPages - 2) pagesToShow.push('...'); pagesToShow.push(totalPages); }
     pagesToShow.forEach(p => { UI.paginationContainer.appendChild(createButton(p, p, false, p === currentPage)); });
     UI.paginationContainer.appendChild(createButton('Next ›', currentPage + 1, currentPage === totalPages));
 }
 
-// --- ALL EVENT LISTENERS ---
+// --- EVENT LISTENERS ---
 UI.filterBtns.forEach(b=>b.addEventListener('click',()=>{ UI.filterBtns.forEach(x=>x.classList.remove('active'));b.classList.add('active');view=b.dataset.f;currentPage=1;render();}));
 [UI.qCountry,UI.qSector,UI.qStage,UI.qSource,UI.search,UI.rowsPerPageSelect].forEach(el=>el.addEventListener('input',()=>{currentPage=1;render();}));
 $('#q-clear').addEventListener('click',()=>{UI.qCountry.value=UI.qSector.value=UI.qStage.value=UI.qSource.value=UI.search.value='';currentPage=1;render();});
