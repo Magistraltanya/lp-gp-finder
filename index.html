@@ -28,7 +28,7 @@ th,td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:mid
 td.expandable{cursor:pointer}
 td.expanded{white-space:normal;overflow:visible;word-wrap:break-word}
 th{background:#f8f9fa;color:var(--grey-text);font-weight:600;text-transform:uppercase;position:sticky;top:0;z-index:3;letter-spacing:.5px}
-.col-actions{text-align:center} /* Fix for dots in actions column */
+.col-actions{text-align:center}
 tr{transition:background-color .2s ease-in-out}
 tr:hover td{background:#f1f5f9}
 .main-footer{flex-shrink:0;padding-top:16px;display:flex;justify-content:space-between;align-items:center}
@@ -57,11 +57,19 @@ tr:hover td{background:#f1f5f9}
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:500}
 .modal-box{background:#fff;border-radius:var(--radius);padding:24px;width:92%;max-width:820px;max-height:85%;overflow:auto;box-shadow:var(--shadow);display:flex;flex-direction:column}
 .modal-box h3{font-size:18px;font-weight:600;margin-bottom:14px;color:var(--blue-dark); border-bottom:1px solid var(--border); padding-bottom:10px;flex-shrink:0}
-/* --- NEW: Unified Label Style & Panel Cleanup --- */
-.panel label {display: block; font-size: 13px; font-weight: 500; color: var(--grey-text); margin-bottom: 8px;}
-.panel select, .panel input {margin-bottom: 12px;}
-.quick-filters button, .ai-discovery-panel button {margin-top: 12px;}
-.manage-list {display:flex; flex-direction:column; gap: 10px;}
+.modal-box .table-wrap{border:1px solid var(--border); border-radius:8px; overflow:auto; max-height: 60vh; margin-bottom:20px;}
+.modal-box table{width:100%;border-collapse:collapse;font-size:14px;}
+.modal-box th,.modal-box td{padding:10px 12px;border-bottom:1px solid var(--border); white-space:normal;text-align:left;vertical-align:middle}
+.modal-box th {background: var(--bg); color: var(--blue-dark); font-weight:600; position:sticky; top:0;}
+.modal-box tr:last-child td {border-bottom:none;}
+.modal-box .close-btn-wrap {margin-top:auto; display:flex; justify-content:flex-end;flex-shrink:0}
+#col-list{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+#col-list li{padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;text-align:center;user-select:none}
+#col-list li.selected{background:var(--blue-dark);color:#fff;border-color:var(--blue-dark)}
+.panel label{display:block;font-size:13px;font-weight:500;color:var(--grey-text);margin-bottom:8px}
+.panel select,.panel input{margin-bottom:12px}
+.quick-filters button,.ai-discovery-panel button{margin-top:12px}
+.manage-list{display:flex;flex-direction:column;gap:10px}
 </style>
 </head><body>
 <aside class="sidebar">
@@ -118,12 +126,20 @@ tr:hover td{background:#f1f5f9}
     </div>
 </main>
 <div id="toast"></div>
-<div class="modal" id="col-modal"></div>
-<div class="modal" id="ct-modal"></div>
+<div class="modal" id="col-modal"><div class="modal-box" style="width:360px">
+    <h3>Visible Columns</h3><ul id="col-list"></ul>
+    <div class="close-btn-wrap"><button class="btn btn-pri close" style="width:120px">Done</button></div>
+</div></div>
+<div class="modal" id="ct-modal"><div class="modal-box">
+    <h3 id="ct-title">Contacts</h3>
+    <div class="table-wrap">
+        <table><thead><tr><th>Name</th><th>Designation</th><th>Email</th><th>LinkedIn</th><th>Contact&nbsp;No.</th></tr></thead><tbody id="ct-body"></tbody></table>
+    </div>
+    <div class="close-btn-wrap"><button class="btn btn-pri close" style="width:120px">Close</button></div>
+</div></div>
 
 <script>
 (()=>{
-// --- CONSTANTS AND ALIASES (Updated Actions width) ---
 const COLS=[{key:'chk',label:' ',width:'40px'},{key:'sn',label:'#',width:'50px'},{key:'entityType',label:'LP/GP/Broker',width:'120px'},{key:'firmName',label:'Firm Name',width:'200px'},{key:'subType',label:'Type',width:'150px'},{key:'address',label:'Address',width:'300px'},{key:'country',label:'Country',width:'120px'},{key:'website',label:'Website',width:'200px'},{key:'companyLinkedIn',label:'Firm LinkedIn',width:'120px'},{key:'about',label:'About',width:'300px'},{key:'investmentStrategy',label:'Strategy',width:'300px'},{key:'sector',label:'Sector',width:'150px'},{key:'sectorDetails',label:'Sector Details',width:'200px'},{key:'stage',label:'Stage',width:'150px'},{key:'source',label:'Source',width:'100px'},{key:'actions',label:'',width:'100px'}];
 const defaultVis=['chk','sn','entityType','firmName','subType','country','website','sector','stage','source','actions'];
 const vis=new Set(JSON.parse(localStorage.getItem('visibleCols')||'null')||defaultVis);
@@ -207,6 +223,7 @@ function render(){
         if (f.isNew) { tr.classList.add('row-new'); delete f.isNew; }
         COLS.forEach(c=>{if(!vis.has(c.key))return;
             const td=document.createElement('td');
+            if(c.key==='actions') td.style.textAlign = 'center';
             const expandableCols = new Set(['about', 'investmentStrategy', 'sectorDetails', 'address', 'firmName']);
             if (expandableCols.has(c.key)) { td.classList.add('expandable'); }
             switch(c.key){
@@ -252,16 +269,22 @@ UI.filterBtns.forEach(b=>b.addEventListener('click',()=>{ UI.filterBtns.forEach(
 [UI.qCountry,UI.qSector,UI.qStage,UI.qSource,UI.search,UI.rowsPerPageSelect].forEach(el=>el.addEventListener('input',()=>{currentPage=1;render();}));
 $('#q-clear').addEventListener('click',()=>{UI.qCountry.value=UI.qSector.value=UI.qStage.value=UI.qSource.value=UI.search.value='';currentPage=1;activeSubTypes.clear();renderSubTypeFilters();render();});
 UI.subtypeTagsContainer.addEventListener('click', e => { if(e.target.classList.contains('subtype-tag')) { const subtype = e.target.dataset.subtype; if(activeSubTypes.has(subtype)) { activeSubTypes.delete(subtype); } else { activeSubTypes.add(subtype); } currentPage = 1; renderSubTypeFilters(); render(); } });
-UI.colBtn.addEventListener('click',()=>{ /* Unchanged */ });
-UI.colModal.addEventListener('click',e=>{/* Unchanged */});
-UI.colList.addEventListener('click',e=>{/* Unchanged */});
-UI.thead.addEventListener('change',e=>{/* Unchanged */});
-UI.tbody.addEventListener('click',async e=>{ if (e.target.classList.contains('expandable')) { e.target.classList.toggle('expanded'); return; } const icon=e.target.closest('[data-act]');if(!icon)return; const id=icon.dataset.id,act=icon.dataset.act; if(act==='ct'){/* Unchanged */} if(act==='del'){/* Unchanged */} });
-UI.ctModal.addEventListener('click',e=>{/* Unchanged */});
-UI.delBulk.addEventListener('click',async()=>{/* Unchanged */});
-UI.aiBtn.addEventListener('click',async()=>{/* Unchanged */});
-UI.fileIn.addEventListener('change', e => {/* Unchanged */});
-UI.expBtn.addEventListener('click',()=>{/* Unchanged */});
+UI.colBtn.addEventListener('click',()=>{ UI.colList.innerHTML='';COLS.forEach(c=>{if(c.key==='actions'||c.key==='chk')return;const li=document.createElement('li');li.textContent=c.label;li.dataset.k=c.key;li.classList.toggle('selected',vis.has(c.key));UI.colList.appendChild(li);}); UI.colModal.style.display='flex';});
+UI.colModal.addEventListener('click',e=>{if(e.target.closest('.close')||e.target===UI.colModal)UI.colModal.style.display='none';});
+UI.colList.addEventListener('click',e=>{const li=e.target.closest('li');if(!li)return;const k=li.dataset.k; vis.has(k)?vis.delete(k):vis.add(k);li.classList.toggle('selected'); localStorage.setItem('visibleCols',JSON.stringify([...vis]));render();});
+UI.thead.addEventListener('change',e=>{if(e.target.id!=='sel-all')return; UI.tbody.querySelectorAll('.rowchk').forEach(cb=>cb.checked=e.target.checked);});
+UI.tbody.addEventListener('click',async e=>{
+    if (e.target.classList.contains('expandable')) { e.target.classList.toggle('expanded'); return; }
+    const icon=e.target.closest('[data-act]');if(!icon)return;
+    const id=icon.dataset.id,act=icon.dataset.act;
+    if(act==='ct'){const row=firms.find(x=>x._id==id);UI.ctTitle.textContent=`Contacts – ${row?.firmName||''}`; UI.ctBody.innerHTML=row?.contacts?.length?row.contacts.map(c=>`<tr><td>${c.contactName||''}</td><td>${c.designation||''}</td><td>${c.email?`<a href="mailto:${c.email}">${c.email}</a>`:''}</td><td>${c.linkedIn?`<a href="${c.linkedIn.startsWith('http')?c.linkedIn:`https://${c.linkedIn}`}" target="_blank">View Profile</a>`:''}</td><td>${c.contactNumber||''}</td></tr>`).join(''):'<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--grey-text)">No contacts yet</td></tr>'; UI.ctModal.style.display='flex';return;}
+    if(act==='del'){ if(!confirm('Are you sure you want to delete this firm?'))return; showO(true); try{const res=await fetch(`/api/firms/${id}`,{method:'DELETE'}); if(!res.ok) throw new Error('Failed to delete'); firms=firms.filter(x=>x._id!=id);render();toast('Deleted successfully',true);} catch(e){ toast(e.message, false); } finally{ showO(false); }}
+});
+UI.ctModal.addEventListener('click',e=>{if(e.target.closest('.close')||e.target===UI.ctModal)UI.ctModal.style.display='none';});
+UI.delBulk.addEventListener('click',async()=>{ const ids=[...UI.tbody.querySelectorAll('.rowchk:checked')].map(cb=>cb.dataset.id); if(!ids.length){toast('Nothing selected',false);return;} if(!confirm(`Delete ${ids.length} selected firms?`))return; showO(true); try{ await Promise.all(ids.map(id=>fetch(`/api/firms/${id}`,{method:'DELETE'}))); firms=firms.filter(x=>!ids.includes(String(x._id)));render();toast(`Deleted ${ids.length} firms.`,true); } catch(e){ toast('Bulk delete failed.', false); } finally{ showO(false); }});
+UI.aiBtn.addEventListener('click',async()=>{ const payload={entityType:UI.aiType.value.trim(),subType:UI.aiSub.value.trim(),sector:UI.aiSec.value.trim(),geo:UI.aiGeo.value.trim()}; if(!payload.geo) { toast('Geography is a required field.', false); return; } showO(true); try{ const res=await fetch('/api/find-investors',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)}); const d=await res.json();if(!res.ok)throw new Error(d.error||res.statusText); if (d.added > 0) { d.newFirms.forEach(f => f.isNew = true); firms.unshift(...d.newFirms.map(mapRow)); currentPage = 1; buildFilters();render(); } toast(`${d.added} new firms added`,true); }catch(e){toast(e.message||'Gemini error',false);}finally{showO(false);} });
+UI.fileIn.addEventListener('change', e => { const f = e.target.files[0]; if (!f) return; showO(true); const rd = new FileReader(); rd.onload = async ev => { try { const wb = XLSX.read(new Uint8Array(ev.target.result), { type:'array', cellDates:true }); const raw = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval:'' }); const groupedFirms = new Map(); raw.forEach(r => { const firmData = {}; const contactData = {}; for (const [k, v] of Object.entries(r)) { const key = alias[k.toLowerCase().trim()] || k.replace(/\s+/g, ''); if (v) (contactKeys.has(key) ? contactData : firmData)[key] = v; } const uniqueKey = (firmData.website || firmData.firmName || '').toLowerCase().trim(); if (!uniqueKey) return; if (!groupedFirms.has(uniqueKey)) { groupedFirms.set(uniqueKey, { ...firmData, contacts: [] }); } const record = groupedFirms.get(uniqueKey); Object.keys(firmData).forEach(k => { if (!record[k]) record[k] = firmData[k]; }); if (Object.values(contactData).some(Boolean)) record.contacts.push(contactData); }); const payload = [...groupedFirms.values()]; if (!payload.length) throw new Error("No valid data to import."); const res = await fetch('/api/firms', { method : 'POST', headers: { 'content-type':'application/json' }, body : JSON.stringify(payload) }); const { inserted = [], error } = await res.json(); if (error) throw new Error(error); if (inserted.length > 0) { inserted.forEach(f => f.isNew = true); firms.unshift(...inserted.map(mapRow)); currentPage = 1; buildFilters(); render(); } toast(`${inserted.length} firms added or updated.`, true); } catch (err) { console.error(err); toast(err.message || 'Upload failed', false); } finally { showO(false); e.target.value = ''; } }; rd.readAsArrayBuffer(f); });
+UI.expBtn.addEventListener('click',()=>{ const selectedIds = new Set([...UI.tbody.querySelectorAll('.rowchk:checked')].map(cb => cb.dataset.id)); const dataToExport = selectedIds.size > 0 ? firms.filter(f => selectedIds.has(String(f._id))) : firms; if(!dataToExport.length){toast('Nothing to export',false);return;} let csvRows = []; const headers = COLS.filter(c => vis.has(c.key) && !['chk','actions','sn'].includes(c.key)).map(c => c.label); csvRows.push(headers.join(',')); dataToExport.forEach(f => { const row = COLS.filter(c => vis.has(c.key) && !['chk','actions','sn'].includes(c.key)).map(c => `"${String(f[c.key]||'').replace(/"/g,'""')}"`); csvRows.push(row.join(',')); }); const blob=new Blob([csvRows.join('\n')],{type:'text/csv;charset=utf-8;'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='magistral_lp_gp_export.csv'; a.click(); URL.revokeObjectURL(a.href); toast(selectedIds.size > 0 ? 'Exporting selected firms...' : 'Exporting all firms...', true); });
 
 init();
 })();
