@@ -1,6 +1,6 @@
 /**
  * POST /api/enrich
- * Fetches strategic details about a firm.
+ * Fetches strategic details about a firm with an improved, more robust prompt.
  */
 export async function onRequestPost({ request, env }) {
   try {
@@ -12,27 +12,28 @@ export async function onRequestPost({ request, env }) {
     }
 
     const PROMPT = `
-      You are a sharp financial analyst. For the investment firm "${firmName}" with the website "${website}", research and return a single JSON object with the following structure.
-      Do not use markdown formatting. The response must be only the raw JSON object.
+      You are an expert financial data analyst specializing in private markets. Your task is to meticulously research the investment firm "${firmName}" (website: ${website}) and return a single, raw JSON object. Do not use markdown.
 
+      Your research process MUST follow these steps:
+      1.  Prioritize information from the firm's official website, regulatory filings (like SEC EDGAR), and press releases.
+      2.  Supplement with data from reputable financial news sources like PitchBook, Preqin, TechCrunch, Axios Pro, etc.
+      3.  Synthesize the findings into the JSON structure below. If a specific piece of data cannot be found after a thorough search, use the value "Not Found".
+
+      Return a single JSON object with this exact structure:
       {
         "investmentPhilosophy": "...",
         "assetsUnderManagement": "...",
         "typicalCheckSize": "...",
         "recentNews": [
-            { "date": "YYYY-MM-DD", "headline": "...", "source": "..." }
-        ],
-        "portfolioHighlights": ["...", "..."],
-        "notableExits": ["..."]
+            { "date": "YYYY-MM-DD", "headline": "...", "source": "...", "link": "..." }
+        ]
       }
 
-      Instructions:
-      1.  investmentPhilosophy: Concisely summarize the firm's investment thesis in 1-2 sentences.
-      2.  assetsUnderManagement: State the firm's AUM. If not found, state "Not publicly disclosed".
-      3.  typicalCheckSize: State the firm's typical investment size. If not found, state "Not disclosed".
-      4.  recentNews: Find up to 3 recent news articles. Provide a date, a concise headline, and the source.
-      5.  portfolioHighlights: List up to 3 notable current portfolio companies.
-      6.  notableExits: List up to 2 notable past exits (IPOs or acquisitions). If none, return an empty array [].
+      Field Instructions:
+      - "investmentPhilosophy": Summarize the firm's core investment thesis, focus, or approach in 1-3 sentences. This should be a close paraphrase or direct quote from their "About Us" or "Strategy" page.
+      - "assetsUnderManagement": State the firm's most recently reported Assets Under Management (AUM). Example: "$1.2 Billion".
+      - "typicalCheckSize": State the firm's typical investment size or range. Example: "$5M - $15M".
+      - "recentNews": Provide up to 3 of the most recent, relevant news items (investments, fundraises, exits). Include the date, a concise headline, the name of the source publication, and a direct URL to the article.
     `;
 
     const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' + GEMINI_KEY;
