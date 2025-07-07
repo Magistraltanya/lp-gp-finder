@@ -1,7 +1,7 @@
 /**
  * POST /api/enrich
  * Body: { firmName, website }
- * This function takes a firm's name and fetches detailed intelligence using Gemini.
+ * Fetches strategic details about a firm.
  */
 export async function onRequestPost({ request, env }) {
   try {
@@ -13,25 +13,23 @@ export async function onRequestPost({ request, env }) {
     }
 
     const PROMPT = `
-      You are a financial analyst. For the investment firm "${firmName}" with the website "${website}", research and return a single JSON object with the following structure.
+      You are a sharp financial analyst. For the investment firm "${firmName}" with the website "${website}", research and return a single JSON object with the following structure.
       Do not use markdown formatting. The response must be only the raw JSON object.
 
       {
-        "recentNews": [
-          { "date": "YYYY-MM-DD", "headline": "...", "source": "..." }
-        ],
-        "keyPersonnel": [
-          { "name": "...", "title": "..." }
-        ],
+        "investmentPhilosophy": "...",
         "assetsUnderManagement": "...",
-        "typicalCheckSize": "..."
+        "typicalCheckSize": "...",
+        "portfolioHighlights": ["...", "..."],
+        "notableExits": ["..."]
       }
 
       Instructions:
-      1.  **recentNews**: Find up to three recent (last 12 months) news articles, press releases, or funding announcements. Provide a date, a concise headline, and the source name.
-      2.  **keyPersonnel**: Identify up to three key partners or decision-makers and their titles.
-      3.  **assetsUnderManagement**: State the firm's AUM (e.g., "$500M", "€2B"). If not found, state "Not publicly disclosed".
-      4.  **typicalCheckSize**: State the firm's typical investment size (e.g., "$1M - $5M"). If not found, state "Not disclosed".
+      1.  **investmentPhilosophy**: Concisely summarize the firm's investment thesis or philosophy in 1-2 sentences from their website.
+      2.  **assetsUnderManagement**: State the firm's AUM (e.g., "$500M", "€2B"). If not found, state "Not publicly disclosed".
+      3.  **typicalCheckSize**: State the firm's typical investment size (e.g., "$1M - $5M"). If not found, state "Not disclosed".
+      4.  **portfolioHighlights**: List up to 3 notable current portfolio companies.
+      5.  **notableExits**: List up to 2 notable past exits (IPOs or acquisitions). If none are prominent, return an empty array [].
     `;
 
     const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' + GEMINI_KEY;
@@ -51,7 +49,6 @@ export async function onRequestPost({ request, env }) {
     const gJson = await geminiRes.json();
     let txt = gJson?.candidates?.[0]?.content?.parts?.[0]?.text ?? '{}';
 
-    // Basic cleanup to find the JSON object
     const startIndex = txt.indexOf('{');
     const endIndex = txt.lastIndexOf('}');
     if (startIndex === -1 || endIndex === -1) {
