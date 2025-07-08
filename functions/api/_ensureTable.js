@@ -33,7 +33,11 @@ export async function ensureTable(DB){
 
   for (const col of columnsToAdd) {
     if (!columns.has(col.name)) {
-      await DB.exec(`ALTER TABLE firms ADD COLUMN ${col.name} ${col.type}`);
+      try {
+        await DB.exec(`ALTER TABLE firms ADD COLUMN ${col.name} ${col.type}`);
+      } catch (e) {
+        console.error(`Failed to add column ${col.name}:`, e.message);
+      }
     }
   }
 }
