@@ -1,7 +1,3 @@
-/**
- * POST /api/enrich
- * Fetches and saves strategic details about a firm.
- */
 export async function onRequestPost({ request, env }) {
   try {
     const { DB, GEMINI_KEY } = env;
@@ -12,13 +8,13 @@ export async function onRequestPost({ request, env }) {
     }
 
     const PROMPT = `
-      You are a world-class financial data analyst at a top-tier investment bank. Your work is meticulous, accurate, and sourced.
+      You are a world-class financial data analyst at a top-tier investment bank. Your work is meticulous, accurate, and verifiable.
       Your task is to create a due diligence summary for the investment firm "${firmName}" (website: ${website}) and return a single, raw JSON object.
 
       Your research process MUST follow these steps:
-      1. Perform targeted Google searches using queries like: "${firmName} assets under management", "${firmName} investment philosophy", "${firmName} recent investments TechCrunch".
-      2. Prioritize information from the firm's official website, then major financial news outlets (Bloomberg, Reuters, PitchBook), then other reputable publications.
-      3. Synthesize the findings into the JSON structure below. If a specific piece of data cannot be reliably found after a thorough search, you MUST use the string "Not Publicly Disclosed".
+      1.  Perform targeted Google searches using queries like: "${firmName} assets under management", "${firmName} investment philosophy", "${firmName} recent news".
+      2.  Prioritize information from the firm's official website, then major financial news outlets (Bloomberg, Reuters, PitchBook, TechCrunch).
+      3.  Synthesize the findings into the JSON structure below. If a specific piece of data cannot be reliably found, you MUST use the string "Not Publicly Disclosed".
 
       Return a single JSON object with this exact structure:
       {
@@ -48,19 +44,13 @@ export async function onRequestPost({ request, env }) {
     const jsonString = txt.substring(txt.indexOf('{'), txt.lastIndexOf('}') + 1);
     const data = JSON.parse(jsonString);
 
-    // Save the enriched data to the database
     await DB.prepare(
       `UPDATE firms SET 
-        philosophy = ?1, 
-        aum = ?2, 
-        check_size = ?3, 
-        news_json = ?4
+        philosophy = ?1, aum = ?2, check_size = ?3, news_json = ?4
        WHERE id = ?5`
     ).bind(
-      data.investmentPhilosophy,
-      data.assetsUnderManagement,
-      data.typicalCheckSize,
-      JSON.stringify(data.recentNews || []),
+      data.investmentPhilosophy, data.assetsUnderManagement,
+      data.typicalCheckSize, JSON.stringify(data.recentNews || []),
       firmId
     ).run();
 
