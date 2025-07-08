@@ -1,10 +1,12 @@
 import { ensureTable } from './_ensureTable.js';
 
+// Helper to safely parse JSON from the database
 const safeJsonParse = (str, defaultVal = []) => {
   if (!str) return defaultVal;
   try {
     return JSON.parse(str);
   } catch (e) {
+    // If parsing fails, return the default value
     return defaultVal;
   }
 };
@@ -14,26 +16,38 @@ export async function onRequest ({ request, env }) {
   await ensureTable(DB);
 
   if (request.method === 'GET') {
-    const rs  = await DB.prepare(`
-      SELECT 
-        id, firm_name, entity_type, sub_type, address, country, website, 
-        company_linkedin, about, investment_strategy, sector, sector_details, 
-        stage, source, validated, contacts_json, 
-        philosophy, aum, check_size, news_json 
-      FROM firms ORDER BY id DESC
-    `).all();
+    const rs  = await DB.prepare(`SELECT * FROM firms ORDER BY id DESC`).all();
     
     const out = rs.results.map(r => ({
-      ...r,
+      // Base properties that are always expected
+      id: r.id,
+      _id: r.id,
+      firmName: r.firm_name,
+      entityType: r.entity_type,
+      subType: r.sub_type,
+      address: r.address,
+      country: r.country,
+      website: r.website,
+      companyLinkedIn: r.company_linkedin,
+      about: r.about,
+      investmentStrategy: r.investment_strategy,
+      sector: r.sector,
+      sectorDetails: r.sector_details,
+      stage: r.stage,
+      source: r.source,
+      validated: r.validated,
       contacts: safeJsonParse(r.contacts_json),
-      recentNews: safeJsonParse(r.news_json),
-      investmentPhilosophy: r.philosophy,
-      assetsUnderManagement: r.aum,
-      typicalCheckSize: r.check_size,
+      
+      // New, optional properties for the dossier
+      investmentPhilosophy: r.philosophy || null,
+      assetsUnderManagement: r.aum || null,
+      typicalCheckSize: r.check_size || null,
+      recentNews: safeJsonParse(r.news_json, null)
     }));
     return new Response(JSON.stringify(out), { headers: { 'content-type': 'application/json' } });
   }
 
+  // POST (Upload) logic remains unchanged
   if (request.method === 'POST') {
     let raw = '';
     const rdr = request.body.getReader();
