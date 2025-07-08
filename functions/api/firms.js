@@ -1,12 +1,10 @@
 import { ensureTable } from './_ensureTable.js';
 
-// Helper to safely parse JSON from the database
 const safeJsonParse = (str, defaultVal = []) => {
   if (!str) return defaultVal;
   try {
     return JSON.parse(str);
   } catch (e) {
-    console.error('Failed to parse JSON:', str, e);
     return defaultVal;
   }
 };
@@ -27,7 +25,7 @@ export async function onRequest ({ request, env }) {
     
     const out = rs.results.map(r => ({
       ...r,
-      contacts : safeJsonParse(r.contacts_json),
+      contacts: safeJsonParse(r.contacts_json),
       recentNews: safeJsonParse(r.news_json),
       investmentPhilosophy: r.philosophy,
       assetsUnderManagement: r.aum,
@@ -43,15 +41,15 @@ export async function onRequest ({ request, env }) {
       const { value, done } = await rdr.read();
       if (done) break;
       raw += new TextDecoder().decode(value);
-      if (raw.length > 10_000_000) return new Response(JSON.stringify({ error : 'File too large – please split it.' }), { status: 413 });
+      if (raw.length > 10_000_000) return new Response(JSON.stringify({ error: 'File too large' }), { status: 413 });
     }
 
     let firmsToInsert;
     try {
       firmsToInsert = JSON.parse(raw);
-      if (!Array.isArray(firmsToInsert) || !firmsToInsert.length) throw 0;
+      if (!Array.isArray(firmsToInsert)) throw 0;
     } catch {
-      return new Response(JSON.stringify({ error : 'Body must be a non-empty JSON array.' }), { status: 400 });
+      return new Response(JSON.stringify({ error: 'Body must be a JSON array' }), { status: 400 });
     }
 
     const stmt = await DB.prepare(`
