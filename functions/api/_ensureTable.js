@@ -1,6 +1,13 @@
+// functions/api/_ensureTable.js
 export async function ensureTable(DB){
+  const info = await DB.prepare(`PRAGMA table_info(firms)`).all().catch(()=>({results:[]}));
+  if(info.results.length){
+    const has = info.results.some(c=>c.name==="contacts_json");
+    if(!has) try{await DB.exec(`ALTER TABLE firms ADD COLUMN contacts_json TEXT DEFAULT '[]'`);}catch{}
+    return;
+  }
   await DB.exec(`
-    CREATE TABLE IF NOT EXISTS firms(
+    CREATE TABLE firms(
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       website TEXT UNIQUE,
       firm_name TEXT,
@@ -19,25 +26,6 @@ export async function ensureTable(DB){
       contacts_json TEXT DEFAULT '[]',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+    CREATE INDEX idx_firms_web ON firms(website);
   `);
-  
-  const schema = await DB.prepare(`PRAGMA table_info(firms)`).all();
-  const columns = new Set(schema.results.map(c => c.name));
-
-  const columnsToAdd = [
-    { name: 'philosophy', type: 'TEXT' },
-    { name: 'aum', type: 'TEXT' },
-    { name: 'check_size', type: 'TEXT' },
-    { name: 'news_json', type: 'TEXT' }
-  ];
-
-  for (const col of columnsToAdd) {
-    if (!columns.has(col.name)) {
-      try {
-        await DB.exec(`ALTER TABLE firms ADD COLUMN ${col.name} ${col.type}`);
-      } catch (e) {
-        console.error(`Failed to add column ${col.name}:`, e.message);
-      }
-    }
-  }
 }
