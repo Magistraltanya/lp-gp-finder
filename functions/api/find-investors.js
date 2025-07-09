@@ -49,29 +49,75 @@ export async function onRequestPost({ request, env }) {
     { const k = Object.keys(SECT).find(k => lc(sector).includes(k)); sector = k ? SECT[k] : 'Sector Agnostic'; }
     if (!geo) return json({ error: 'geo is required' }, 400);
 
+    /* ── Gemini prompt [NEW - ANTI-HALLUCINATION] ────────── */
     const PROMPT = `
-You are a specialized data extraction engine. Your sole purpose is to find real-world investment firms and populate a JSON structure with their data.
-**Task:**
-Find **exactly five (5)** real investment firms that match the criteria below. You MUST find real data for every single key in the JSON structure. Do NOT use placeholder text like "Not Disclosed", "N/A", or "...". The data must be real and verifiable.
-**Criteria:**
+You are an expert financial researcher. Your primary goal is to provide real, verifiable, and up-to-date information. Do not invent or hallucinate data.
+
+**Your Task:**
+Identify **up to five (5)** investment firms matching the criteria below.
+
+**Mandatory Research Process:**
+1.  You must act as if you are performing real-time Google searches to find these firms.
+2.  For each firm, you must verify the existence of their official website and LinkedIn page. The URLs must be active and correct.
+3.  Prioritize information directly from the firm's official sources.
+
+**Search Criteria:**
 * **Entity Type:** "${entityType}"
 * **Specific Type:** "${subType}"
 * **Sector Focus:** "${sector}"
 * **Geography:** "${geo}"
-**Output:**
-Return ONLY a raw JSON array of five objects. Do not use markdown.
-**JSON Structure:**
-[ { "firmName": "...", "entityType": "${entityType}", "subType": "${subType}", "address": "...", "country": "...", "website": "...", "companyLinkedIn": "...", "about": "...", "investmentStrategy": "...", "sector": "${sector}", "sectorDetails": "...", "stage": "...", "contacts": [ { "contactName": "...", "designation": "...", "email": "...", "linkedIn": "..." } ] } ]`;
 
-    const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' + GEMINI_KEY;
-    
-    // --- (Fetch, retry, and JSON parsing logic is unchanged) ---
+**Output Format:**
+Return ONLY a raw JSON array. If you cannot find any real firms that match the criteria after a thorough search, return an empty array []. Do not invent firms to meet the five-firm quota.
+
+**JSON Structure:**
+[
+  {
+    "firmName": "The official, full name of the firm.",
+    "entityType": "${entityType}",
+    "subType": "${subType}",
+    "address": "The firm's physical address.",
+    "country": "The country where the firm is located.",
+    "website": "The valid and active official website URL.",
+    "companyLinkedIn": "The valid and active URL for the company's LinkedIn page.",
+    "about": "A brief summary from the company's own 'About Us' page or LinkedIn profile.",
+    "investmentStrategy": "A concise summary of their investment thesis from their official website.",
+    "sector": "${sector}",
+    "sectorDetails": "Specific sub-sectors of focus.",
+    "stage": "The investment stage, e.g., 'Seed', 'Series A', 'Stage Agnostic'.",
+    "contacts": [
+      {
+        "contactName": "Name of a key decision-maker (e.g., Partner, Managing Director).",
+        "designation": "Their official title.",
+        "email": "Their publicly listed professional email, if available.",
+        "linkedIn": "A valid URL to their personal LinkedIn profile."
+      }
+    ]
+  }
+]
+`;
+
+    /* ── Gemini call [UPGRADED MODEL] ────────────────────── */
+    const url =
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent' +
+      `?key=${GEMINI_KEY}`;
+
     let res;
     for (let i = 0; i < 3; i++) {
-      res = await fetch(url, { method : 'POST', headers: { 'content-type':'application/json' }, body : JSON.stringify({ contents: [{ role:'user', parts:[{ text:PROMPT }] }], generationConfig : { responseMimeType:'application/json', temperature: 0.7 } }) });
+      res = await fetch(url, {
+        method : 'POST',
+        headers: { 'content-type':'application/json' },
+        body   : JSON.stringify({
+          contents: [{ role:'user', parts:[{ text:PROMPT }] }],
+          generationConfig : { responseMimeType:'application/json', temperature: 0.5 }
+        })
+      });
       if (res.ok) break;
-      if (res.status >= 500) await new Promise(r => setTimeout(r, 400 * (i + 1))); else throw new Error(`Gemini ${res.status}`);
+      if (res.status >= 500) await new Promise(r => setTimeout(r, 400 * (i + 1)));
+      else throw new Error(`Gemini ${res.status}`);
     }
+
+    // --- (JSON parsing and DB logic are unchanged) ---
     const gJson = await res.json();
     let txt = gJson?.candidates?.[0]?.content?.parts?.[0]?.text ?? '[]';
     const startIndex = txt.indexOf('[');
@@ -93,15 +139,13 @@ Return ONLY a raw JSON array of five objects. Do not use markdown.
       const firmName = (f.firmName || '').trim();
       const originalWebsite = (f.website || '').trim();
 
-      // De-dupe Step 1: Skip if firm name is missing or already exists in DB
       if (!firmName) continue;
       const existing = await DB.prepare("SELECT id FROM firms WHERE firm_name = ?1").bind(firmName).first();
       if (existing) continue;
 
       const normalizedWebsite = normalizeUrl(originalWebsite);
       const contactsJson = JSON.stringify(f.contacts || []);
-
-      // De-dupe Step 2: INSERT OR IGNORE handles de-duping by normalized website
+      
       const dbRes = await stmt.bind(
         normalizedWebsite, firmName, f.entityType.trim(), f.subType.trim(),
         f.address || 'N/A', f.country || geo,
