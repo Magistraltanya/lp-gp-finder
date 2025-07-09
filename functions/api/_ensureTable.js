@@ -1,8 +1,36 @@
 // functions/api/_ensureTable.js
 export async function ensureTable(DB){
-  // Create the 'firms' table if it doesn't exist
+  // First, create the cache table if it doesn't exist. This is safe to run every time.
   await DB.exec(`
-    CREATE TABLE IF NOT EXISTS firms(
+    CREATE TABLE IF NOT EXISTS gemini_cache(
+      query_hash TEXT PRIMARY KEY,
+      response TEXT,
+      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  // Now, use the original, safe logic for the 'firms' table.
+  // Check if the 'firms' table already exists.
+  const info = await DB.prepare(`PRAGMA table_info(firms)`).all().catch(()=>({results:[]}));
+
+  if(info.results.length){
+    // If the table exists, check if the 'contacts_json' column needs to be added (for old versions).
+    const hasContactsColumn = info.results.some(c=>c.name==="contacts_json");
+    if(!hasContactsColumn) {
+      try {
+        await DB.exec(`ALTER TABLE firms ADD COLUMN contacts_json TEXT DEFAULT '[]'`);
+      } catch(e) {
+        console.error("Failed to add contacts_json column", e);
+      }
+    }
+    // IMPORTANT: Exit the function since the table is already set up.
+    return;
+  }
+
+  // If the 'firms' table does NOT exist, create it from scratch.
+  // This block will now only run ONCE during the initial setup.
+  await DB.exec(`
+    CREATE TABLE firms(
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       website TEXT UNIQUE,
       firm_name TEXT,
@@ -22,30 +50,6 @@ export async function ensureTable(DB){
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `);
-
-  // Create an index on the 'website' column for faster lookups
-  await DB.exec(`CREATE INDEX IF NOT EXISTS idx_firms_web ON firms(website);`);
-
-  // Create the new cache table
-  await DB.exec(`
-    CREATE TABLE IF NOT EXISTS gemini_cache(
-      query_hash TEXT PRIMARY KEY,
-      response TEXT,
-      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-  `);
-
-  // This ALTER TABLE logic is for backwards compatibility if the column was missing.
-  // We can check and add it if needed.
-  try {
-    await DB.prepare(`SELECT contacts_json FROM firms LIMIT 1`).run();
-  } catch (e) {
-    if (e.message.includes('no such column')) {
-      try {
-        await DB.exec(`ALTER TABLE firms ADD COLUMN contacts_json TEXT DEFAULT '[]'`);
-      } catch (alterError) {
-        console.error("Failed to alter table:", alterError);
-      }
-    }
-  }
+  
+  await DB.exec(`CREATE INDEX idx_firms_web ON firms(website);`);
 }
