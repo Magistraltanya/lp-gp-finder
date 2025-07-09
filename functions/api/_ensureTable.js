@@ -1,34 +1,15 @@
-// functions/api/_ensureTable.js
-export async function ensureTable(DB){
-  // First, create the cache table if it doesn't exist. This is safe to run every time.
-  await DB.exec(`
-    CREATE TABLE IF NOT EXISTS gemini_cache(
-      query_hash TEXT PRIMARY KEY,
-      response TEXT,
-      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-  `);
+// A separate, safe function to set up the main `firms` table
+async function ensureFirmsTable(DB) {
+  // Check if the 'firms' table already exists using the original, safe logic.
+  const info = await DB.prepare(`PRAGMA table_info(firms)`).all().catch(() => ({ results: [] }));
 
-  // Now, use the original, safe logic for the 'firms' table.
-  // Check if the 'firms' table already exists.
-  const info = await DB.prepare(`PRAGMA table_info(firms)`).all().catch(()=>({results:[]}));
-
-  if(info.results.length){
-    // If the table exists, check if the 'contacts_json' column needs to be added (for old versions).
-    const hasContactsColumn = info.results.some(c=>c.name==="contacts_json");
-    if(!hasContactsColumn) {
-      try {
-        await DB.exec(`ALTER TABLE firms ADD COLUMN contacts_json TEXT DEFAULT '[]'`);
-      } catch(e) {
-        console.error("Failed to add contacts_json column", e);
-      }
-    }
-    // IMPORTANT: Exit the function since the table is already set up.
+  // If the table already exists, we're done with it.
+  if (info.results.length > 0) {
     return;
   }
 
-  // If the 'firms' table does NOT exist, create it from scratch.
-  // This block will now only run ONCE during the initial setup.
+  // If the table does NOT exist, create it from scratch.
+  // This will only run once when the database is first created.
   await DB.exec(`
     CREATE TABLE firms(
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -52,4 +33,21 @@ export async function ensureTable(DB){
   `);
   
   await DB.exec(`CREATE INDEX idx_firms_web ON firms(website);`);
+}
+
+// A separate function to ensure the cache table exists.
+async function ensureCacheTable(DB) {
+  await DB.exec(`
+    CREATE TABLE IF NOT EXISTS gemini_cache(
+      query_hash TEXT PRIMARY KEY,
+      response TEXT,
+      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+}
+
+// The main export function that runs both setup functions.
+export async function ensureTable(DB) {
+  await ensureFirmsTable(DB);
+  await ensureCacheTable(DB);
 }
