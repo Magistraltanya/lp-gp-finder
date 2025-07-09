@@ -2,11 +2,6 @@ import { ensureTable } from './_ensureTable.js';
 
 /**
  * Normalizes a URL string to a canonical form for de-duplication.
- * - Removes protocol (http/https)
- * - Removes 'www.'
- * - Removes trailing slashes
- * @param {string} urlString The URL to normalize.
- * @returns {string} The normalized URL.
  */
 function normalizeUrl(urlString) {
   if (!urlString || typeof urlString !== 'string') return '';
@@ -20,14 +15,12 @@ function normalizeUrl(urlString) {
     if (hostname.startsWith('www.')) {
       hostname = hostname.substring(4);
     }
-    // Reconstruct, ensuring lowercase hostname and no trailing slash on root path
     let path = url.pathname;
     if (path === '/') path = '';
     else if (path.endsWith('/')) path = path.slice(0, -1);
     
     return (hostname + path + url.search).toLowerCase();
   } catch (e) {
-    // Fallback for invalid URLs
     return urlString.trim().toLowerCase()
       .replace(/^https?:\/\//, '')
       .replace(/^www\./, '')
@@ -37,15 +30,13 @@ function normalizeUrl(urlString) {
 
 /**
  * POST /api/find-investors
- * Body : { entityType, subType, sector, geo }
- * Return: { added, newFirms:[ rowObjects … ] }
  */
 export async function onRequestPost({ request, env }) {
   try {
     const { DB, GEMINI_KEY } = env;
     await ensureTable(DB);
 
-    // --- (Code for parsing parameters and defining vocabs remains the same) ---
+    // --- (Parameter parsing and vocab definitions are unchanged) ---
     const b = await request.json().catch(() => ({}));
     let { entityType = '', subType = '', sector = '', geo = '' } = b;
     const lc = s => (s || '').toLowerCase().trim();
@@ -73,8 +64,8 @@ Return ONLY a raw JSON array of five objects. Do not use markdown.
 [ { "firmName": "...", "entityType": "${entityType}", "subType": "${subType}", "address": "...", "country": "...", "website": "...", "companyLinkedIn": "...", "about": "...", "investmentStrategy": "...", "sector": "${sector}", "sectorDetails": "...", "stage": "...", "contacts": [ { "contactName": "...", "designation": "...", "email": "...", "linkedIn": "..." } ] } ]`;
 
     const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' + GEMINI_KEY;
-
-    // --- (Code for fetch, retry, and JSON parsing remains the same) ---
+    
+    // --- (Fetch, retry, and JSON parsing logic is unchanged) ---
     let res;
     for (let i = 0; i < 3; i++) {
       res = await fetch(url, { method : 'POST', headers: { 'content-type':'application/json' }, body : JSON.stringify({ contents: [{ role:'user', parts:[{ text:PROMPT }] }], generationConfig : { responseMimeType:'application/json', temperature: 0.7 } }) });
@@ -90,7 +81,6 @@ Return ONLY a raw JSON array of five objects. Do not use markdown.
     let arr;
     try { arr = JSON.parse(txt); if (!Array.isArray(arr)) throw new Error("Response was not a JSON array."); } catch(e) { console.error("Gemini JSON Parse Error:", e.message, "Original Text:", txt); return json({ error:'Gemini bad JSON' }, 500); }
 
-    /* ── insert with normalized URL for de-duping [IMPROVED] ──── */
     const stmt = await DB.prepare(`
       INSERT OR IGNORE INTO firms
       (website,firm_name,entity_type,sub_type,address,country,company_linkedin,about,investment_strategy,
@@ -100,16 +90,20 @@ Return ONLY a raw JSON array of five objects. Do not use markdown.
 
     const out = [];
     for (const f of arr) {
+      const firmName = (f.firmName || '').trim();
       const originalWebsite = (f.website || '').trim();
-      // Skip if essential info is missing
-      if (!originalWebsite || !f.firmName) continue;
+
+      // De-dupe Step 1: Skip if firm name is missing or already exists in DB
+      if (!firmName) continue;
+      const existing = await DB.prepare("SELECT id FROM firms WHERE firm_name = ?1").bind(firmName).first();
+      if (existing) continue;
 
       const normalizedWebsite = normalizeUrl(originalWebsite);
       const contactsJson = JSON.stringify(f.contacts || []);
 
+      // De-dupe Step 2: INSERT OR IGNORE handles de-duping by normalized website
       const dbRes = await stmt.bind(
-        normalizedWebsite, // Use normalized URL as the UNIQUE key
-        f.firmName.trim(), f.entityType.trim(), f.subType.trim(),
+        normalizedWebsite, firmName, f.entityType.trim(), f.subType.trim(),
         f.address || 'N/A', f.country || geo,
         f.companyLinkedIn || 'N/A', f.about || 'N/A',
         f.investmentStrategy || 'N/A', f.sector || sector,
@@ -118,14 +112,12 @@ Return ONLY a raw JSON array of five objects. Do not use markdown.
       ).run();
 
       if (dbRes.meta.changes) {
-        // If inserted, return the firm's data to the UI
         const firmForUi = { ...f };
         firmForUi.id = dbRes.meta.last_row_id;
         firmForUi.validated = false;
         firmForUi.source = 'Gemini';
         firmForUi.contacts = f.contacts || [];
-        // Make sure the UI gets the original, clickable URL
-        firmForUi.website = originalWebsite; 
+        firmForUi.website = originalWebsite;
         out.push(firmForUi);
       }
     }
