@@ -57,9 +57,15 @@ export async function onRequestPost({ request, env }) {
 
     if (!geo) return json({ error: 'geo is required' }, 400);
 
-    /* ── Gemini prompt [IMPROVED] ─────────────────────────────────── */
+    /* ── Gemini prompt [IMPROVED FOR QUALITY] ──────────── */
     const PROMPT = `
-You are a top-tier investment analyst researcher. Your task is to identify exactly five (5) investment firms based on the following criteria. Your results must be real, verifiable firms.
+You are a world-class financial data analyst. Your task is to research and identify exactly five (5) real and verifiable investment firms based on the criteria below.
+
+**Research Process:**
+1.  Internally search for firms matching the criteria, prioritizing official websites, LinkedIn profiles, and reputable financial news sources.
+2.  For each firm found, you must diligently fill in all the fields in the JSON structure.
+3.  You MUST make a best effort to find accurate, non-generic information for every single field. Do not invent data.
+4.  Only if a specific piece of information is genuinely not publicly available after your research, should you use the string "Not Publicly Disclosed". Avoid using this where possible.
 
 **Search Criteria:**
 * **Entity Type:** "${entityType}"
@@ -68,29 +74,29 @@ You are a top-tier investment analyst researcher. Your task is to identify exact
 * **Geography:** "${geo}"
 
 **Output Format:**
-Return a single, raw JSON array of objects. Do NOT use markdown formatting (like \`\`\`json). The response must be ONLY the JSON array. Each object must have the exact keys below. If a value cannot be found, use the string "Not Disclosed".
+Return a single, raw JSON array of objects. Do not use markdown. Each object must have the exact keys from the structure example below.
 
 **JSON Structure Example:**
 [
   {
-    "firmName": "Example Ventures",
+    "firmName": "The official, full name of the firm.",
     "entityType": "${entityType}",
     "subType": "${subType}",
-    "address": "123 Innovation Drive, Silicon Valley, CA 94043, USA",
-    "country": "USA",
-    "website": "https://www.exampleventures.com",
-    "companyLinkedIn": "https://linkedin.com/company/example-ventures",
-    "about": "A brief, one-sentence description of the firm.",
-    "investmentStrategy": "A concise summary of their investment thesis and focus.",
+    "address": "The full street address.",
+    "country": "The country where the firm is located.",
+    "website": "The official company website URL.",
+    "companyLinkedIn": "The full LinkedIn URL of the company page.",
+    "about": "A concise, one or two-sentence summary of the firm.",
+    "investmentStrategy": "A summary of their investment thesis, focus, and typical check size.",
     "sector": "${sector}",
-    "sectorDetails": "Specific niches within the main sector, e.g., 'SaaS, AI/ML'.",
-    "stage": "e.g., 'Seed', 'Series A', 'Growth', 'Stage Agnostic'",
+    "sectorDetails": "Specific niches within the main sector (e.g., 'SaaS, AI/ML').",
+    "stage": "Investment stage (e.g., 'Seed', 'Series A', 'Growth').",
     "contacts": [
       {
-        "contactName": "Jane Doe",
-        "designation": "Managing Partner",
-        "email": "Not Disclosed",
-        "linkedIn": "https://linkedin.com/in/janedoe-investor"
+        "contactName": "Name of a key person (e.g., Partner, Managing Director).",
+        "designation": "Their official title.",
+        "email": "Their professional email, if public.",
+        "linkedIn": "Full URL to their personal LinkedIn profile."
       }
     ]
   }
@@ -109,7 +115,8 @@ Return a single, raw JSON array of objects. Do NOT use markdown formatting (like
         headers: { 'content-type':'application/json' },
         body   : JSON.stringify({
           contents: [{ role:'user', parts:[{ text:PROMPT }] }],
-          generationConfig : { responseMimeType:'application/json', temperature: 0.2 }
+          // Temperature raised slightly to encourage more detailed responses
+          generationConfig : { responseMimeType:'application/json', temperature: 0.4 }
         })
       });
       if (res.ok) break;
@@ -117,11 +124,10 @@ Return a single, raw JSON array of objects. Do NOT use markdown formatting (like
       else throw new Error(`Gemini ${res.status}`);
     }
 
-    /* ── Robust JSON parsing [IMPROVED] ─────────────────── */
+    /* ── Robust JSON parsing ───────────────────────────── */
     const gJson = await res.json();
     let txt = gJson?.candidates?.[0]?.content?.parts?.[0]?.text ?? '[]';
 
-    // Find the start and end of the array to make parsing more reliable
     const startIndex = txt.indexOf('[');
     const endIndex = txt.lastIndexOf(']');
 
@@ -142,7 +148,7 @@ Return a single, raw JSON array of objects. Do NOT use markdown formatting (like
         return json({ error:'Gemini bad JSON' }, 500);
     }
 
-    /* ── insert (now with contacts) [IMPROVED] ─────────── */
+    /* ── insert (now with contacts) ────────────────────── */
     const stmt = await DB.prepare(`
       INSERT OR IGNORE INTO firms
       (website,firm_name,entity_type,sub_type,address,country,company_linkedin,about,investment_strategy,
@@ -154,7 +160,6 @@ Return a single, raw JSON array of objects. Do NOT use markdown formatting (like
     for (const f of arr) {
       if (!(f.website && f.firmName)) continue;
 
-      // Use the contacts array provided by the AI
       const contactsJson = JSON.stringify(f.contacts || []);
 
       const res = await stmt.bind(
@@ -171,7 +176,7 @@ Return a single, raw JSON array of objects. Do NOT use markdown formatting (like
           id: res.meta.last_row_id,
           validated: false,
           source: 'Gemini',
-          contacts: f.contacts || [], // Pass the array to the front-end
+          contacts: f.contacts || [],
           ...f
         });
       }
