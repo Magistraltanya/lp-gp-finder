@@ -49,17 +49,17 @@ export async function onRequestPost({ request, env }) {
     { const k = Object.keys(SECT).find(k => lc(sector).includes(k)); sector = k ? SECT[k] : 'Sector Agnostic'; }
     if (!geo) return json({ error: 'geo is required' }, 400);
 
-    /* ── Gemini prompt [ANTI-HALLUCINATION] ────────── */
+    /* ── Gemini prompt [NEW - RELAXED & FOCUSED] ────────── */
     const PROMPT = `
-You are an expert financial researcher. Your primary goal is to provide real, verifiable, and up-to-date information. Do not invent or hallucinate data.
+You are a helpful AI assistant designed to find investment firms. Your goal is to find real-world companies based on the user's criteria.
 
-**Your Task:**
-Identify **up to five (5)** investment firms matching the criteria below.
+**Task:**
+Return a JSON array of **exactly five (5)** investment firms that match the criteria below.
 
-**Mandatory Research Process:**
-1.  You must act as if you are performing real-time Google searches to find these firms.
-2.  For each firm, you must verify the existence of their official website and LinkedIn page. The URLs must be active and correct.
-3.  Prioritize information directly from the firm's official sources.
+**Guidelines:**
+* Focus on finding real firms. Prioritize information from official websites.
+* The 'website' and 'companyLinkedIn' URLs should be valid links.
+* Fill in all the fields of the JSON structure as best as you can. Avoid placeholders if possible.
 
 **Search Criteria:**
 * **Entity Type:** "${entityType}"
@@ -68,9 +68,9 @@ Identify **up to five (5)** investment firms matching the criteria below.
 * **Geography:** "${geo}"
 
 **Output Format:**
-Return ONLY a raw JSON array. If you cannot find any real firms that match the criteria after a thorough search, return an empty array []. Do not invent firms to meet the five-firm quota.
+Return ONLY a raw JSON array of five objects. Do not use markdown.
 
-**JSON Structure:**
+**JSON Structure (Firm-level data only):**
 [
   {
     "firmName": "The official, full name of the firm.",
@@ -78,26 +78,18 @@ Return ONLY a raw JSON array. If you cannot find any real firms that match the c
     "subType": "${subType}",
     "address": "The firm's physical address.",
     "country": "The country where the firm is located.",
-    "website": "The valid and active official website URL.",
-    "companyLinkedIn": "The valid and active URL for the company's LinkedIn page.",
-    "about": "A brief summary from the company's own 'About Us' page or LinkedIn profile.",
-    "investmentStrategy": "A concise summary of their investment thesis from their official website.",
+    "website": "The official website URL.",
+    "companyLinkedIn": "The URL for the company's LinkedIn page.",
+    "about": "A brief summary of the firm in 3-4 lines.",
+    "investmentStrategy": "A concise summary of their investment thesis (AUM, Checksize etc.) in 4-5 lines.",
     "sector": "${sector}",
     "sectorDetails": "Specific sub-sectors of focus.",
     "stage": "The investment stage, e.g., 'Seed', 'Series A', 'Stage Agnostic'.",
-    "contacts": [
-      {
-        "contactName": "Name of a key decision-maker (e.g., Partner, Managing Director).",
-        "designation": "Their official title.",
-        "email": "Their publicly listed professional email, if available.",
-        "linkedIn": "A valid URL to their personal LinkedIn profile."
-      }
-    ]
+    "contacts": []
   }
 ]
 `;
 
-    /* ── Gemini call [REVERTED TO FLASH MODEL] ─────────────────── */
     const url =
       'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent' +
       `?key=${GEMINI_KEY}`;
@@ -109,7 +101,7 @@ Return ONLY a raw JSON array. If you cannot find any real firms that match the c
         headers: { 'content-type':'application/json' },
         body   : JSON.stringify({
           contents: [{ role:'user', parts:[{ text:PROMPT }] }],
-          generationConfig : { responseMimeType:'application/json', temperature: 0.5 }
+          generationConfig : { responseMimeType:'application/json', temperature: 0.7 }
         })
       });
       if (res.ok) break;
@@ -117,7 +109,6 @@ Return ONLY a raw JSON array. If you cannot find any real firms that match the c
       else throw new Error(`Gemini ${res.status}`);
     }
 
-    // --- (JSON parsing and DB logic are unchanged) ---
     const gJson = await res.json();
     let txt = gJson?.candidates?.[0]?.content?.parts?.[0]?.text ?? '[]';
     const startIndex = txt.indexOf('[');
@@ -144,6 +135,7 @@ Return ONLY a raw JSON array. If you cannot find any real firms that match the c
       if (existing) continue;
 
       const normalizedWebsite = normalizeUrl(originalWebsite);
+      // Ensure contacts_json is always at least an empty array
       const contactsJson = JSON.stringify(f.contacts || []);
       
       const dbRes = await stmt.bind(
