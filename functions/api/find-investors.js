@@ -49,39 +49,42 @@ export async function onRequestPost({ request, env }) {
     { const k = Object.keys(SECT).find(k => lc(sector).includes(k)); sector = k ? SECT[k] : 'Sector Agnostic'; }
     if (!geo) return json({ error: 'geo is required' }, 400);
 
-    /* ── Gemini prompt [NEW - RELAXED & FOCUSED] ────────── */
+    /* ── Gemini prompt [NEW - PROFESSIONAL & STRICT] ────── */
     const PROMPT = `
-You are a helpful AI assistant designed to find investment firms. Your goal is to find real-world companies based on the user's criteria.
+You are a high-accuracy data extraction AI. Your task is to find real investment firms and populate a JSON structure with verified, real-world data.
 
-**Task:**
-Return a JSON array of **exactly five (5)** investment firms that match the criteria below.
-
-**Guidelines:**
-* Focus on finding real firms. Prioritize information from official websites.
-* The 'website' and 'companyLinkedIn' URLs should be valid links.
-* Fill in all the fields of the JSON structure as best as you can. Avoid placeholders if possible.
+**Constraint Checklist (MUST be followed):**
+1.  Return **exactly five (5)** investment firms matching the search criteria.
+2.  **Placeholder text is strictly forbidden.** Do not use "unavailable", "N/A", "Not Disclosed", or similar phrases. Every JSON field must contain real data.
+3.  **Verification is mandatory.** For each firm, you must simulate a search to find its official website and LinkedIn page to gather and confirm the information. All URLs must be valid and active.
 
 **Search Criteria:**
-* **Entity Type:** "${entityType}"
-* **Specific Type:** "${subType}"
+* **Entity Type:** "${entityType}" (Synonyms: LP → Limited Partner, GP → General Partner)
+* **Specific Type:** "${subType}" (Handle common abbreviations automatically: VC/V.C. → Venture Capital, PE → Private Equity, FO → Family Office, etc.
 * **Sector Focus:** "${sector}"
 * **Geography:** "${geo}"
 
 **Output Format:**
 Return ONLY a raw JSON array of five objects. Do not use markdown.
+=== Instructions ===
+1. Use authoritative, up-to-date public sources (official site ≫ LinkedIn ≫ news >> other secondary sources).  
+2. Populate **every field** in the JSON schema; avoid placeholders like “N/A”.  
+3. ‘website’ and ‘companyLinkedIn’ must be complete HTTPS URLs.  
+4. Keep ‘about’ and ‘investmentStrategy’ concise yet specific (≤ 5 lines each).  
+5. Think step-by-step internally but **output ONLY** the final JSON array—no markdown, code fences, or commentary.
 
-**JSON Structure (Firm-level data only):**
+**JSON Structure:**
 [
   {
     "firmName": "The official, full name of the firm.",
     "entityType": "${entityType}",
     "subType": "${subType}",
-    "address": "The firm's physical address.",
+    "address": "The firm's full, real physical address.",
     "country": "The country where the firm is located.",
-    "website": "The official website URL.",
-    "companyLinkedIn": "The URL for the company's LinkedIn page.",
-    "about": "A brief summary of the firm in 3-4 lines.",
-    "investmentStrategy": "A concise summary of their investment thesis (AUM, Checksize etc.) in 4-5 lines.",
+    "website": "The valid, official website URL.",
+    "companyLinkedIn": "The valid URL for the company's LinkedIn page.",
+    "about": "A detailed 3-4 line summary of the firm, from its official sources.",
+    "investmentStrategy": "A detailed 4-5 line summary of their investment thesis, including typical assets under management (AUM), check size, and investment focus.",
     "sector": "${sector}",
     "sectorDetails": "Specific sub-sectors of focus.",
     "stage": "The investment stage, e.g., 'Seed', 'Series A', 'Stage Agnostic'.",
@@ -94,6 +97,7 @@ Return ONLY a raw JSON array of five objects. Do not use markdown.
       'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent' +
       `?key=${GEMINI_KEY}`;
 
+    /* ── Gemini call [NEW - Resilient Retry Logic] ─────── */
     let res;
     for (let i = 0; i < 3; i++) {
       res = await fetch(url, {
@@ -101,12 +105,28 @@ Return ONLY a raw JSON array of five objects. Do not use markdown.
         headers: { 'content-type':'application/json' },
         body   : JSON.stringify({
           contents: [{ role:'user', parts:[{ text:PROMPT }] }],
-          generationConfig : { responseMimeType:'application/json', temperature: 0.7 }
+          generationConfig : { responseMimeType:'application/json', temperature: 0.6 }
         })
       });
+
       if (res.ok) break;
-      if (res.status >= 500) await new Promise(r => setTimeout(r, 400 * (i + 1)));
-      else throw new Error(`Gemini ${res.status}`);
+
+      if (res.status === 429) {
+        // Handle rate-limiting by waiting longer before retrying
+        const waitTime = 2000 * (i + 1); // 2s, 4s, 6s
+        await new Promise(r => setTimeout(r, waitTime));
+      } else if (res.status >= 500) {
+        // Handle server errors with a shorter wait
+        await new Promise(r => setTimeout(r, 500 * (i + 1)));
+      } else {
+        // For other client errors (400, 401 etc.), fail immediately
+        throw new Error(`Gemini request failed with status: ${res.status}`);
+      }
+    }
+
+    // After the loop, if the response is still not OK, throw an error
+    if (!res.ok) {
+      throw new Error(`Gemini request failed after all retries with status: ${res.status}`);
     }
 
     const gJson = await res.json();
@@ -128,14 +148,13 @@ Return ONLY a raw JSON array of five objects. Do not use markdown.
     const out = [];
     for (const f of arr) {
       const firmName = (f.firmName || '').trim();
-      const originalWebsite = (f.website || '').trim();
-
       if (!firmName) continue;
+
       const existing = await DB.prepare("SELECT id FROM firms WHERE firm_name = ?1").bind(firmName).first();
       if (existing) continue;
 
+      const originalWebsite = (f.website || '').trim();
       const normalizedWebsite = normalizeUrl(originalWebsite);
-      // Ensure contacts_json is always at least an empty array
       const contactsJson = JSON.stringify(f.contacts || []);
       
       const dbRes = await stmt.bind(
