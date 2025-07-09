@@ -39,20 +39,28 @@ export async function onRequestPost({ request, env }) {
     const b = await request.json().catch(() => ({}));
     const { entityType = '', subType = '', sector = '', geo = '' } = b;
     if (!geo) return json({ error: 'geo is required' }, 400);
-    
-    const systemInstruction = {
-      role: 'system',
-      parts: [{ text: `You are a high-accuracy data extraction API. Your only output is a single, raw JSON array. Do not use markdown or conversational text. The user will provide a JSON template with "..." as placeholders. Fill in these placeholders with real-world data and return the completed JSON.` }]
-    };
 
-    const PROMPT_TEMPLATE = `// Criteria: ${entityType}, ${subType}, ${sector}, ${geo}
+    // [NEW] Combined prompt that merges system instructions and the template
+    // This resolves the 400 Bad Request error.
+    const PROMPT = `
+You are a high-accuracy data extraction API. Your only output is a single, raw JSON array. Do not use markdown or conversational text.
+Your task is to find real-world investment firms based on the criteria below and fill in the "..." placeholders in the provided JSON template. Return only the completed JSON.
+
+// Search Criteria:
+// Entity Type: ${entityType}
+// Specific Type: ${subType}
+// Sector Focus: ${sector}
+// Geography: ${geo}
+
+// JSON Template to Complete:
 [
   {"firmName": "...", "entityType": "${entityType}", "subType": "${subType}", "address": "...", "country": "${geo}", "website": "...", "companyLinkedIn": "...", "about": "...", "investmentStrategy": "...", "sector": "${sector}", "sectorDetails": "...", "stage": "..."},
   {"firmName": "...", "entityType": "${entityType}", "subType": "${subType}", "address": "...", "country": "${geo}", "website": "...", "companyLinkedIn": "...", "about": "...", "investmentStrategy": "...", "sector": "${sector}", "sectorDetails": "...", "stage": "..."},
   {"firmName": "...", "entityType": "${entityType}", "subType": "${subType}", "address": "...", "country": "${geo}", "website": "...", "companyLinkedIn": "...", "about": "...", "investmentStrategy": "...", "sector": "${sector}", "sectorDetails": "...", "stage": "..."},
   {"firmName": "...", "entityType": "${entityType}", "subType": "${subType}", "address": "...", "country": "${geo}", "website": "...", "companyLinkedIn": "...", "about": "...", "investmentStrategy": "...", "sector": "${sector}", "sectorDetails": "...", "stage": "..."},
   {"firmName": "...", "entityType": "${entityType}", "subType": "${subType}", "address": "...", "country": "${geo}", "website": "...", "companyLinkedIn": "...", "about": "...", "investmentStrategy": "...", "sector": "${sector}", "sectorDetails": "...", "stage": "..."}
-]`;
+]
+`;
     
     const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' + GEMINI_KEY;
     
@@ -61,7 +69,12 @@ export async function onRequestPost({ request, env }) {
       res = await fetch(url, {
         method : 'POST',
         headers: { 'content-type':'application/json' },
-        body   : JSON.stringify({ contents: [systemInstruction, { role: 'user', parts: [{ text: PROMPT_TEMPLATE }] }], generationConfig : { responseMimeType:'application/json', temperature: 0.6 } })
+        body   : JSON.stringify({
+          contents: [
+            { role: 'user', parts: [{ text: PROMPT }] } // Simplified request body
+          ],
+          generationConfig : { responseMimeType:'application/json', temperature: 0.6 }
+        })
       });
       if (res.ok) break;
       if (res.status === 429) { const waitTime = 2500 * (i + 1); await new Promise(r => setTimeout(r, waitTime)); }
