@@ -49,7 +49,7 @@ export async function onRequestPost({ request, env }) {
     { const k = Object.keys(SECT).find(k => lc(sector).includes(k)); sector = k ? SECT[k] : 'Sector Agnostic'; }
     if (!geo) return json({ error: 'geo is required' }, 400);
 
-    /* ── Gemini prompt [NEW - ANTI-HALLUCINATION] ────────── */
+    /* ── Gemini prompt [ANTI-HALLUCINATION] ────────── */
     const PROMPT = `
 You are an expert financial researcher. Your primary goal is to provide real, verifiable, and up-to-date information. Do not invent or hallucinate data.
 
@@ -97,9 +97,9 @@ Return ONLY a raw JSON array. If you cannot find any real firms that match the c
 ]
 `;
 
-    /* ── Gemini call [UPGRADED MODEL] ────────────────────── */
+    /* ── Gemini call [REVERTED TO FLASH MODEL] ─────────────────── */
     const url =
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent' +
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent' +
       `?key=${GEMINI_KEY}`;
 
     let res;
