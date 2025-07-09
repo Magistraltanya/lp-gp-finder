@@ -34,7 +34,6 @@ function normalizeUrl(urlString) {
 export async function onRequestPost({ request, env }) {
   try {
     const { DB, GEMINI_KEY } = env;
-    // This now only ensures the main 'firms' table exists.
     await ensureTable(DB);
 
     // [NEW] Cache table setup is now isolated inside this function.
