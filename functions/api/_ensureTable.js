@@ -1,13 +1,8 @@
 // functions/api/_ensureTable.js
 export async function ensureTable(DB){
-  const info = await DB.prepare(`PRAGMA table_info(firms)`).all().catch(()=>({results:[]}));
-  if(info.results.length){
-    const has = info.results.some(c=>c.name==="contacts_json");
-    if(!has) try{await DB.exec(`ALTER TABLE firms ADD COLUMN contacts_json TEXT DEFAULT '[]'`);}catch{}
-    return;
-  }
+  // Create the 'firms' table if it doesn't exist
   await DB.exec(`
-    CREATE TABLE firms(
+    CREATE TABLE IF NOT EXISTS firms(
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       website TEXT UNIQUE,
       firm_name TEXT,
@@ -26,6 +21,31 @@ export async function ensureTable(DB){
       contacts_json TEXT DEFAULT '[]',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
-    CREATE INDEX idx_firms_web ON firms(website);
   `);
+
+  // Create an index on the 'website' column for faster lookups
+  await DB.exec(`CREATE INDEX IF NOT EXISTS idx_firms_web ON firms(website);`);
+
+  // Create the new cache table
+  await DB.exec(`
+    CREATE TABLE IF NOT EXISTS gemini_cache(
+      query_hash TEXT PRIMARY KEY,
+      response TEXT,
+      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  // This ALTER TABLE logic is for backwards compatibility if the column was missing.
+  // We can check and add it if needed.
+  try {
+    await DB.prepare(`SELECT contacts_json FROM firms LIMIT 1`).run();
+  } catch (e) {
+    if (e.message.includes('no such column')) {
+      try {
+        await DB.exec(`ALTER TABLE firms ADD COLUMN contacts_json TEXT DEFAULT '[]'`);
+      } catch (alterError) {
+        console.error("Failed to alter table:", alterError);
+      }
+    }
+  }
 }
