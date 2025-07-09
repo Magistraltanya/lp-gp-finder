@@ -1,7 +1,7 @@
 import { ensureTable } from './_ensureTable.js';
 
 /**
- * Normalizes a URL string to a canonical form for de-duplication.
+ * Normalizes a URL string for de-duplication.
  */
 function normalizeUrl(urlString) {
   if (!urlString || typeof urlString !== 'string') return '';
@@ -34,14 +34,22 @@ function normalizeUrl(urlString) {
 export async function onRequestPost({ request, env }) {
   try {
     const { DB, GEMINI_KEY } = env;
+    // This now only ensures the main 'firms' table exists.
     await ensureTable(DB);
+
+    // [NEW] Cache table setup is now isolated inside this function.
+    await DB.exec(`
+      CREATE TABLE IF NOT EXISTS gemini_cache(
+        query_hash TEXT PRIMARY KEY,
+        response TEXT,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
 
     const b = await request.json().catch(() => ({}));
     const { entityType = '', subType = '', sector = '', geo = '' } = b;
-
     if (!geo) return json({ error: 'geo is required' }, 400);
 
-    // --- Caching Logic to Prevent 429 Errors ---
     const cacheKey = `${entityType}|${subType}|${sector}|${geo}`.toLowerCase();
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
     const cached = await DB.prepare(
@@ -50,8 +58,6 @@ export async function onRequestPost({ request, env }) {
 
     if (cached) {
       const cachedFirms = JSON.parse(cached.response);
-      // We will still process the cached firms through our de-duplication logic
-      // to ensure they don't conflict with any manually added data.
       return processFirms(cachedFirms, DB, { entityType, subType, sector, geo });
     }
     
@@ -68,7 +74,7 @@ export async function onRequestPost({ request, env }) {
   {"firmName": "...", "entityType": "${entityType}", "subType": "${subType}", "address": "...", "country": "${geo}", "website": "...", "companyLinkedIn": "...", "about": "...", "investmentStrategy": "...", "sector": "${sector}", "sectorDetails": "...", "stage": "..."},
   {"firmName": "...", "entityType": "${entityType}", "subType": "${subType}", "address": "...", "country": "${geo}", "website": "...", "companyLinkedIn": "...", "about": "...", "investmentStrategy": "...", "sector": "${sector}", "sectorDetails": "...", "stage": "..."}
 ]`;
-
+    
     const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' + GEMINI_KEY;
     
     let res;
@@ -79,7 +85,7 @@ export async function onRequestPost({ request, env }) {
         body   : JSON.stringify({ contents: [systemInstruction, { role: 'user', parts: [{ text: PROMPT_TEMPLATE }] }], generationConfig : { responseMimeType:'application/json', temperature: 0.6 } })
       });
       if (res.ok) break;
-      if (res.status === 429) { const waitTime = 2000 * (i + 1); await new Promise(r => setTimeout(r, waitTime)); }
+      if (res.status === 429) { const waitTime = 2500 * (i + 1); await new Promise(r => setTimeout(r, waitTime)); }
       else if (res.status >= 500) { await new Promise(r => setTimeout(r, 500 * (i + 1))); }
       else { throw new Error(`Gemini request failed with status: ${res.status}`); }
     }
@@ -90,7 +96,7 @@ export async function onRequestPost({ request, env }) {
     let txt = gJson?.candidates?.[0]?.content?.parts?.[0]?.text ?? '[]';
     const startIndex = txt.indexOf('[');
     const endIndex = txt.lastIndexOf(']');
-    if (startIndex === -1 || endIndex === -1) { return json({ error: 'Gemini returned invalid data (no array found)' }, 500); }
+    if (startIndex === -1 || endIndex === -1) { return json({ error: 'Gemini returned invalid data' }, 500); }
     txt = txt.substring(startIndex, endIndex + 1);
     let arr;
     try { arr = JSON.parse(txt); if (!Array.isArray(arr)) throw new Error("Response was not a JSON array."); } catch(e) { return json({ error:'Gemini bad JSON' }, 500); }
@@ -106,7 +112,7 @@ export async function onRequestPost({ request, env }) {
 }
 
 /**
- * Processes an array of firms from Gemini or cache, de-duplicates, and inserts them.
+ * Processes an array of firms, de-duplicates, and inserts them.
  */
 async function processFirms(firmsArray, DB, criteria) {
   const stmt = await DB.prepare(`INSERT OR IGNORE INTO firms (website,firm_name,entity_type,sub_type,address,country,company_linkedin,about,investment_strategy,sector,sector_details,stage,source,validated,contacts_json) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,'Gemini',0,'[]')`);
