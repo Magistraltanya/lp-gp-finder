@@ -1,15 +1,5 @@
 // functions/api/_ensureTable.js
 export async function ensureTable(DB){
-  // SAFELY ADDED: Create the cache table if it doesn't exist. This is non-destructive.
-  await DB.exec(`
-    CREATE TABLE IF NOT EXISTS gemini_cache(
-      query_hash TEXT PRIMARY KEY,
-      response TEXT,
-      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-  `);
-
-  // YOUR ORIGINAL, WORKING LOGIC - UNCHANGED:
   const info = await DB.prepare(`PRAGMA table_info(firms)`).all().catch(()=>({results:[]}));
   if(info.results.length){
     const has = info.results.some(c=>c.name==="contacts_json");
