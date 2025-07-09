@@ -100,29 +100,35 @@ export async function onRequestPost({ request, env }) {
 
 
 
-    /* ── Gemini prompt [NEW - PROFESSIONAL & STRICT] ────── */
+    /* ── Gemini prompt [NEW - RELAXED & FOCUSED] ────────── */
 
     const PROMPT = `
 
-You are a high-accuracy data extraction AI. Your task is to find real investment firms and populate a JSON structure with verified, real-world data.
+You are a helpful AI assistant designed to find investment firms. Your goal is to find real-world companies based on the user's criteria.
 
 
 
-**Constraint Checklist (MUST be followed):**
+**Task:**
 
-1.  Return **exactly five (5)** investment firms matching the search criteria.
+Return a JSON array of **exactly five (5)** investment firms that match the criteria below.
 
-2.  **Placeholder text is strictly forbidden.** Do not use "unavailable", "N/A", "Not Disclosed", or similar phrases. Every JSON field must contain real data.
 
-3.  **Verification is mandatory.** For each firm, you must simulate a search to find its official website and LinkedIn page to gather and confirm the information. All URLs must be valid and active.
+
+**Guidelines:**
+
+* Focus on finding real firms. Prioritize information from official websites.
+
+* The 'website' and 'companyLinkedIn' URLs should be valid links.
+
+* Fill in all the fields of the JSON structure as best as you can. Avoid placeholders if possible.
 
 
 
 **Search Criteria:**
 
-* **Entity Type:** "${entityType}" (Synonyms: LP → Limited Partner, GP → General Partner)
+* **Entity Type:** "${entityType}"
 
-* **Specific Type:** "${subType}" (Handle common abbreviations automatically: VC/V.C. → Venture Capital, PE → Private Equity, FO → Family Office, etc.
+* **Specific Type:** "${subType}"
 
 * **Sector Focus:** "${sector}"
 
@@ -134,21 +140,9 @@ You are a high-accuracy data extraction AI. Your task is to find real investment
 
 Return ONLY a raw JSON array of five objects. Do not use markdown.
 
-=== Instructions ===
-
-1. Use authoritative, up-to-date public sources (official site ≫ LinkedIn ≫ news >> other secondary sources).  
-
-2. Populate **every field** in the JSON schema; avoid placeholders like “N/A”.  
-
-3. ‘website’ and ‘companyLinkedIn’ must be complete HTTPS URLs.  
-
-4. Keep ‘about’ and ‘investmentStrategy’ concise yet specific (≤ 5 lines each).  
-
-5. Think step-by-step internally but **output ONLY** the final JSON array—no markdown, code fences, or commentary.
 
 
-
-**JSON Structure:**
+**JSON Structure (Firm-level data only):**
 
 [
 
@@ -160,17 +154,17 @@ Return ONLY a raw JSON array of five objects. Do not use markdown.
 
     "subType": "${subType}",
 
-    "address": "The firm's full, real physical address.",
+    "address": "The firm's physical address.",
 
     "country": "The country where the firm is located.",
 
-    "website": "The valid, official website URL.",
+    "website": "The official website URL.",
 
-    "companyLinkedIn": "The valid URL for the company's LinkedIn page.",
+    "companyLinkedIn": "The URL for the company's LinkedIn page.",
 
-    "about": "A detailed 3-4 line summary of the firm, from its official sources.",
+    "about": "A brief summary of the firm in 3-4 lines.",
 
-    "investmentStrategy": "A detailed 4-5 line summary of their investment thesis, including typical assets under management (AUM), check size, and investment focus.",
+    "investmentStrategy": "A concise summary of their investment thesis (AUM, Checksize etc.) in 4-5 lines.",
 
     "sector": "${sector}",
 
@@ -196,8 +190,6 @@ Return ONLY a raw JSON array of five objects. Do not use markdown.
 
 
 
-    /* ── Gemini call [NEW - Resilient Retry Logic] ─────── */
-
     let res;
 
     for (let i = 0; i < 3; i++) {
@@ -212,49 +204,17 @@ Return ONLY a raw JSON array of five objects. Do not use markdown.
 
           contents: [{ role:'user', parts:[{ text:PROMPT }] }],
 
-          generationConfig : { responseMimeType:'application/json', temperature: 0.6 }
+          generationConfig : { responseMimeType:'application/json', temperature: 0.7 }
 
         })
 
       });
 
-
-
       if (res.ok) break;
 
+      if (res.status >= 500) await new Promise(r => setTimeout(r, 400 * (i + 1)));
 
-
-      if (res.status === 429) {
-
-        // Handle rate-limiting by waiting longer before retrying
-
-        const waitTime = 2000 * (i + 1); // 2s, 4s, 6s
-
-        await new Promise(r => setTimeout(r, waitTime));
-
-      } else if (res.status >= 500) {
-
-        // Handle server errors with a shorter wait
-
-        await new Promise(r => setTimeout(r, 500 * (i + 1)));
-
-      } else {
-
-        // For other client errors (400, 401 etc.), fail immediately
-
-        throw new Error(`Gemini request failed with status: ${res.status}`);
-
-      }
-
-    }
-
-
-
-    // After the loop, if the response is still not OK, throw an error
-
-    if (!res.ok) {
-
-      throw new Error(`Gemini request failed after all retries with status: ${res.status}`);
+      else throw new Error(`Gemini ${res.status}`);
 
     }
 
@@ -298,9 +258,11 @@ Return ONLY a raw JSON array of five objects. Do not use markdown.
 
       const firmName = (f.firmName || '').trim();
 
+      const originalWebsite = (f.website || '').trim();
+
+
+
       if (!firmName) continue;
-
-
 
       const existing = await DB.prepare("SELECT id FROM firms WHERE firm_name = ?1").bind(firmName).first();
 
@@ -308,9 +270,9 @@ Return ONLY a raw JSON array of five objects. Do not use markdown.
 
 
 
-      const originalWebsite = (f.website || '').trim();
-
       const normalizedWebsite = normalizeUrl(originalWebsite);
+
+      // Ensure contacts_json is always at least an empty array
 
       const contactsJson = JSON.stringify(f.contacts || []);
 
