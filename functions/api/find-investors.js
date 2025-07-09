@@ -34,31 +34,11 @@ function normalizeUrl(urlString) {
 export async function onRequestPost({ request, env }) {
   try {
     const { DB, GEMINI_KEY } = env;
-    await ensureTable(DB);
-
-    // Cache table setup is isolated inside this function to prevent side effects.
-    await DB.exec(`
-      CREATE TABLE IF NOT EXISTS gemini_cache(
-        query_hash TEXT PRIMARY KEY,
-        response TEXT,
-        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
+    await ensureTable(DB); // Checks that the 'firms' table exists
 
     const b = await request.json().catch(() => ({}));
     const { entityType = '', subType = '', sector = '', geo = '' } = b;
     if (!geo) return json({ error: 'geo is required' }, 400);
-
-    const cacheKey = `${entityType}|${subType}|${sector}|${geo}`.toLowerCase();
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-    const cached = await DB.prepare(
-      "SELECT response FROM gemini_cache WHERE query_hash = ?1 AND timestamp > ?2"
-    ).bind(cacheKey, oneHourAgo).first();
-
-    if (cached) {
-      const cachedFirms = JSON.parse(cached.response);
-      return processFirms(cachedFirms, DB, { entityType, subType, sector, geo });
-    }
     
     const systemInstruction = {
       role: 'system',
@@ -95,52 +75,43 @@ export async function onRequestPost({ request, env }) {
     let txt = gJson?.candidates?.[0]?.content?.parts?.[0]?.text ?? '[]';
     const startIndex = txt.indexOf('[');
     const endIndex = txt.lastIndexOf(']');
-    if (startIndex === -1 || endIndex === '[]') { return json({ error: 'Gemini returned invalid data' }, 500); }
+    if (startIndex === -1 || endIndex === -1) { return json({ error: 'Gemini returned invalid data' }, 500); }
     txt = txt.substring(startIndex, endIndex + 1);
     let arr;
     try { arr = JSON.parse(txt); if (!Array.isArray(arr)) throw new Error("Response was not a JSON array."); } catch(e) { return json({ error:'Gemini bad JSON' }, 500); }
-
-    await DB.prepare("REPLACE INTO gemini_cache (query_hash, response) VALUES (?1, ?2)").bind(cacheKey, JSON.stringify(arr)).run();
     
-    return processFirms(arr, DB, { entityType, subType, sector, geo });
+    const stmt = await DB.prepare(`INSERT OR IGNORE INTO firms (website,firm_name,entity_type,sub_type,address,country,company_linkedin,about,investment_strategy,sector,sector_details,stage,source,validated,contacts_json) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,'Gemini',0,'[]')`);
+    const out = [];
+
+    for (const f of arr) {
+      const firmName = (f.firmName || '').trim();
+      if (!firmName || firmName === "...") continue;
+
+      const existing = await DB.prepare("SELECT id FROM firms WHERE firm_name = ?1").bind(firmName).first();
+      if (existing) continue;
+
+      const originalWebsite = (f.website || '').trim();
+      const normalizedWebsite = normalizeUrl(originalWebsite);
+      
+      const dbRes = await stmt.bind(
+        normalizedWebsite, firmName, f.entityType.trim(), f.subType.trim(),
+        f.address || 'N/A', f.country || geo,
+        f.companyLinkedIn || 'N/A', f.about || 'N/A',
+        f.investmentStrategy || 'N/A', f.sector || sector,
+        f.sectorDetails || 'Niche not stated', f.stage || 'Stage Agnostic'
+      ).run();
+
+      if (dbRes.meta.changes) {
+        const firmForUi = { ...f, id: dbRes.meta.last_row_id, validated: false, source: 'Gemini', contacts: [], website: originalWebsite };
+        out.push(firmForUi);
+      }
+    }
+    return json({ added: out.length, newFirms: out });
 
   } catch (e) {
     console.error(e);
     return json({ error:String(e.message || e) }, 500);
   }
-}
-
-/**
- * Processes an array of firms, de-duplicates, and inserts them.
- */
-async function processFirms(firmsArray, DB, criteria) {
-  const stmt = await DB.prepare(`INSERT OR IGNORE INTO firms (website,firm_name,entity_type,sub_type,address,country,company_linkedin,about,investment_strategy,sector,sector_details,stage,source,validated,contacts_json) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,'Gemini',0,'[]')`);
-  const out = [];
-
-  for (const f of firmsArray) {
-    const firmName = (f.firmName || '').trim();
-    if (!firmName || firmName === "...") continue;
-
-    const existing = await DB.prepare("SELECT id FROM firms WHERE firm_name = ?1").bind(firmName).first();
-    if (existing) continue;
-
-    const originalWebsite = (f.website || '').trim();
-    const normalizedWebsite = normalizeUrl(originalWebsite);
-    
-    const dbRes = await stmt.bind(
-      normalizedWebsite, firmName, f.entityType.trim(), f.subType.trim(),
-      f.address || 'N/A', f.country || criteria.geo,
-      f.companyLinkedIn || 'N/A', f.about || 'N/A',
-      f.investmentStrategy || 'N/A', f.sector || criteria.sector,
-      f.sectorDetails || 'Niche not stated', f.stage || 'Stage Agnostic'
-    ).run();
-
-    if (dbRes.meta.changes) {
-      const firmForUi = { ...f, id: dbRes.meta.last_row_id, validated: false, source: 'Gemini', contacts: [], website: originalWebsite };
-      out.push(firmForUi);
-    }
-  }
-  return json({ added: out.length, newFirms: out });
 }
 
 const json = (d, s = 200) => new Response(JSON.stringify(d), { status:s, headers:{ 'content-type':'application/json' } });
