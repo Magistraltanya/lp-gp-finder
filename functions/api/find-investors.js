@@ -57,46 +57,43 @@ export async function onRequestPost({ request, env }) {
 
     if (!geo) return json({ error: 'geo is required' }, 400);
 
-    /* ── Gemini prompt [IMPROVED FOR QUALITY] ──────────── */
+    /* ── Gemini prompt [NEW - MORE FORCEFUL] ───────────── */
     const PROMPT = `
-You are a world-class financial data analyst. Your task is to research and identify exactly five (5) real and verifiable investment firms based on the criteria below.
+You are a specialized data extraction engine. Your sole purpose is to find real-world investment firms and populate a JSON structure with their data.
 
-**Research Process:**
-1.  Internally search for firms matching the criteria, prioritizing official websites, LinkedIn profiles, and reputable financial news sources.
-2.  For each firm found, you must diligently fill in all the fields in the JSON structure.
-3.  You MUST make a best effort to find accurate, non-generic information for every single field. Do not invent data.
-4.  Only if a specific piece of information is genuinely not publicly available after your research, should you use the string "Not Publicly Disclosed". Avoid using this where possible.
+**Task:**
+Find **exactly five (5)** real investment firms that match the criteria below. You MUST find real data for every single key in the JSON structure. Do NOT use placeholder text like "Not Disclosed", "N/A", or "...". The data must be real and verifiable.
 
-**Search Criteria:**
+**Criteria:**
 * **Entity Type:** "${entityType}"
 * **Specific Type:** "${subType}"
 * **Sector Focus:** "${sector}"
 * **Geography:** "${geo}"
 
-**Output Format:**
-Return a single, raw JSON array of objects. Do not use markdown. Each object must have the exact keys from the structure example below.
+**Output:**
+Return ONLY a raw JSON array of five objects. Do not use markdown.
 
-**JSON Structure Example:**
+**JSON Structure:**
 [
   {
-    "firmName": "The official, full name of the firm.",
+    "firmName": "...",
     "entityType": "${entityType}",
     "subType": "${subType}",
-    "address": "The full street address.",
-    "country": "The country where the firm is located.",
-    "website": "The official company website URL.",
-    "companyLinkedIn": "The full LinkedIn URL of the company page.",
-    "about": "A concise, one or two-sentence summary of the firm.",
-    "investmentStrategy": "A summary of their investment thesis, focus, and typical check size.",
+    "address": "...",
+    "country": "...",
+    "website": "...",
+    "companyLinkedIn": "...",
+    "about": "...",
+    "investmentStrategy": "...",
     "sector": "${sector}",
-    "sectorDetails": "Specific niches within the main sector (e.g., 'SaaS, AI/ML').",
-    "stage": "Investment stage (e.g., 'Seed', 'Series A', 'Growth').",
+    "sectorDetails": "...",
+    "stage": "...",
     "contacts": [
       {
-        "contactName": "Name of a key person (e.g., Partner, Managing Director).",
-        "designation": "Their official title.",
-        "email": "Their professional email, if public.",
-        "linkedIn": "Full URL to their personal LinkedIn profile."
+        "contactName": "...",
+        "designation": "...",
+        "email": "...",
+        "linkedIn": "..."
       }
     ]
   }
@@ -115,8 +112,8 @@ Return a single, raw JSON array of objects. Do not use markdown. Each object mus
         headers: { 'content-type':'application/json' },
         body   : JSON.stringify({
           contents: [{ role:'user', parts:[{ text:PROMPT }] }],
-          // Temperature raised slightly to encourage more detailed responses
-          generationConfig : { responseMimeType:'application/json', temperature: 0.4 }
+          // Temperature increased to promote more diverse and complete results
+          generationConfig : { responseMimeType:'application/json', temperature: 0.7 }
         })
       });
       if (res.ok) break;
