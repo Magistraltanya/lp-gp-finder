@@ -1,5 +1,5 @@
 /**
- * DELETE /api/firms/:id   → 204 on success
+ * DELETE /api/firms/:id
  */
 export async function onRequest({ request, env, params }) {
   if (request.method !== "DELETE") {
