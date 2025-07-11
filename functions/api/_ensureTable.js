@@ -1,4 +1,3 @@
-// functions/api/_ensureTable.js
 export async function ensureTable(DB){
   const info = await DB.prepare(`PRAGMA table_info(firms)`).all().catch(()=>({results:[]}));
   if(info.results.length){
