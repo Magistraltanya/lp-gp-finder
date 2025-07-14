@@ -1,18 +1,15 @@
 /**
  * Ensures the 'contacts_source' column exists in the firms table.
- * This is a safe, one-time operation.
  */
 async function ensureContactsSourceColumn(DB) {
   try {
     await DB.prepare(`SELECT contacts_source FROM firms LIMIT 1`).first();
   } catch (e) {
-    // If the column doesn't exist, add it.
     if (e.message.includes('no such column')) {
       await DB.exec(`ALTER TABLE firms ADD COLUMN contacts_source TEXT`);
     }
   }
 }
-
 
 export async function onRequestPost({ request, env, params }) {
   try {
@@ -26,18 +23,19 @@ export async function onRequestPost({ request, env, params }) {
 
     await ensureContactsSourceColumn(DB);
 
-    // [NEW] Stricter, zero-tolerance prompt for higher quality results.
+    // [NEW] Ultra-strict prompt to eliminate hallucinations and bad links.
     const PROMPT = `
-You are a lead generation specialist AI. Your task is to find two key decision-makers (e.g., Founder, CEO, Partner, Managing Director) for the company "${firmName}" with the website "${website}".
+You are a factual data researcher. Your task is to find two real, key decision-makers (e.g., Founder, CEO, Partner) for the company "${firmName}" (${website}).
 
-**Constraint Checklist (MUST be followed):**
-1.  **No Placeholders:** You are strictly forbidden from using placeholder text like "Unknown", "N/A", or "Not Disclosed".
-2.  **Empty Strings Only:** If, after a thorough search, a specific piece of information cannot be found, you MUST use an empty string "" as the value.
-3.  **Verification is Mandatory:** You must simulate a search of the company's website and LinkedIn to verify the person's current role and details.
-4.  **Find Two Leads:** Return a JSON array containing up to two of the most senior and relevant contacts you can find.
+**Golden Rule:** It is better to return one high-quality, fully-verified contact than two contacts with fake information. It is better to return an empty field than a fake one.
+
+**Mandatory Process:**
+1.  **Verify Existence:** You must simulate searching the web to find real people currently associated with the firm.
+2.  **Validate URLs:** The 'linkedIn' URL MUST be a valid, working link to the correct person's profile. Do not invent URLs.
+3.  **No Placeholders:** You are strictly forbidden from using placeholder text like "Unknown". If data cannot be verified, use an empty string "".
 
 **Output Format:**
-Return ONLY a raw JSON array. Do not use markdown.
+Return ONLY a raw JSON array of up to two contact objects.
 
 **JSON Template to Complete:**
 [
@@ -57,7 +55,8 @@ Return ONLY a raw JSON array. Do not use markdown.
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ role: 'user', parts: [{ text: PROMPT }] }],
-        generationConfig: { responseMimeType: 'application/json', temperature: 0.4 }
+        // Lower temperature to reduce creativity and hallucinations
+        generationConfig: { responseMimeType: 'application/json', temperature: 0.2 }
       })
     });
 
@@ -74,14 +73,14 @@ Return ONLY a raw JSON array. Do not use markdown.
         throw new Error("Gemini did not return a valid array of contacts.");
     }
     
-    // Get existing contacts from the database
     const firm = await DB.prepare("SELECT contacts_json FROM firms WHERE id = ?").bind(id).first();
     const existingContacts = JSON.parse(firm.contacts_json || '[]');
     
-    // Merge existing and new contacts
-    const mergedContacts = [...existingContacts, ...newContacts];
+    // Filter out any incomplete results from Gemini before merging
+    const verifiedNewContacts = newContacts.filter(c => c.contactName && c.contactName !== "...");
 
-    // Update the firm record with the merged contacts and set the source
+    const mergedContacts = [...existingContacts, ...verifiedNewContacts];
+
     await DB.prepare(
       `UPDATE firms SET contacts_json = ?1, contacts_source = 'Gemini' WHERE id = ?2`
     ).bind(JSON.stringify(mergedContacts), id).run();
