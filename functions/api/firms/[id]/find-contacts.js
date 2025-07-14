@@ -24,20 +24,20 @@ export async function onRequestPost({ request, env, params }) {
       return new Response(JSON.stringify({ error: 'Firm ID and Name are required' }), { status: 400 });
     }
 
-    // Ensure the database schema is up-to-date for this feature
     await ensureContactsSourceColumn(DB);
 
-    // Refined prompt based on your detailed instructions
+    // [NEW] Stricter, zero-tolerance prompt for higher quality results.
     const PROMPT = `
-You are a lead generation specialist AI. Your task is to find two key decision-makers for the company "${firmName}" with the website "${website}".
+You are a lead generation specialist AI. Your task is to find two key decision-makers (e.g., Founder, CEO, Partner, Managing Director) for the company "${firmName}" with the website "${website}".
 
-**Mandatory Process:**
-1.  Analyze the company's website, especially "Team", "Leadership", or "About Us" pages.
-2.  Cross-reference findings with Google and LinkedIn searches to confirm roles and find contact details.
-3.  Prioritize accuracy and verification for all fields.
+**Constraint Checklist (MUST be followed):**
+1.  **No Placeholders:** You are strictly forbidden from using placeholder text like "Unknown", "N/A", or "Not Disclosed".
+2.  **Empty Strings Only:** If, after a thorough search, a specific piece of information cannot be found, you MUST use an empty string "" as the value.
+3.  **Verification is Mandatory:** You must simulate a search of the company's website and LinkedIn to verify the person's current role and details.
+4.  **Find Two Leads:** Return a JSON array containing up to two of the most senior and relevant contacts you can find.
 
 **Output Format:**
-Return ONLY a raw JSON array containing up to two contact objects. Each object must have the keys as shown in the template. Do not use markdown.
+Return ONLY a raw JSON array. Do not use markdown.
 
 **JSON Template to Complete:**
 [
