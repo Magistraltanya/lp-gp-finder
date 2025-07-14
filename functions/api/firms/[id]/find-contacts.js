@@ -23,30 +23,61 @@ export async function onRequestPost({ request, env, params }) {
 
     await ensureContactsSourceColumn(DB);
 
-    // [FINAL PROMPT] Incorporates source hierarchy and URL reality checks.
+    // [FINAL, HIGH-ACCURACY PROMPT]
     const PROMPT = `
-You are a meticulous financial data researcher. Your task is to find two key decision-makers for the company "${firmName}" (${website}).
+<prompt>
+  <role>
+    You are a meticulous, high-accuracy data verification and enrichment specialist. Your sole purpose is to find real, verifiable contact information for key personnel at a given company.
+  </role>
 
-**Golden Rule:** A valid, working LinkedIn URL is mandatory. It is better to return ONE fully verified contact with a working URL than two contacts with fake data.
+  <rules>
+    <rule>Your output MUST be ONLY the raw JSON array. Do not include any other text, explanations, or markdown.</rule>
+    <rule>You MUST follow the step-by-step research process internally.</rule>
+    <rule>DO NOT invent or guess any information, especially LinkedIn URLs or email addresses. An empty string "" is infinitely better than a fake or incorrect data point.</rule>
+    <rule>A valid, working, and correct LinkedIn URL for the contact is the highest priority. If you cannot find a valid URL for a person, do not include them in the results.</rule>
+  </rules>
 
-**Mandatory Research Process:**
-1.  **Source Hierarchy:** You must prioritize sources in this order: Official Company Website ("Team" or "Leadership" page) > Official LinkedIn Page > Reputable secondary sources (e.g., Bloomberg, PitchBook, Crunchbase).
-2.  **URL Reality Check:** Before outputting a LinkedIn URL, you must act as if you are verifying it is a real, active profile for the correct person. Do not guess or generate plausible-looking but fake URLs.
-3.  **No Placeholders:** You are strictly forbidden from using "Unknown" or "N/A". If data cannot be verified from a reputable source, use an empty string "".
+  <process>
+    <step id="1">Receive the target company: <company name="${firmName}" website="${website}" />.</step>
+    <step id="2">Simulate a targeted search on Google and LinkedIn for the company's key decision-makers (CEO, Founder, Partner, Managing Director).</step>
+    <step id="3">For each potential lead, verify their current role and the authenticity of their LinkedIn profile URL. A real URL is mandatory.</step>
+    <step id="4">Attempt to find a publicly listed email address. If found, include it. If not found, you must use an empty string "".</step>
+    <step id="5">Format up to two of the most senior, fully-verified leads you find into the JSON structure provided.</step>
+  </process>
 
-**Output Format:**
-Return ONLY a raw JSON array of up to two contact objects.
+  <example_output>
+  [
+    {
+      "contactName": "Satya Nadella",
+      "designation": "Chairman & Chief Executive Officer",
+      "email": "",
+      "linkedIn": "https://www.linkedin.com/in/satyanadella/",
+      "contactNumber": ""
+    }
+  ]
+  </example_output>
 
-**JSON Template to Complete:**
-[
-  {
-    "contactName": "...",
-    "designation": "...",
-    "email": "...",
-    "linkedIn": "...",
-    "contactNumber": "..."
-  }
-]
+  <final_task>
+  Now, perform this process for the company specified in Step 1. Fill in the template below with the verified data you find.
+
+  [
+    {
+      "contactName": "...",
+      "designation": "...",
+      "email": "...",
+      "linkedIn": "...",
+      "contactNumber": "..."
+    },
+    {
+      "contactName": "...",
+      "designation": "...",
+      "email": "...",
+      "linkedIn": "...",
+      "contactNumber": "..."
+    }
+  ]
+  </final_task>
+</prompt>
 `;
 
     const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=' + GEMINI_KEY;
@@ -56,7 +87,7 @@ Return ONLY a raw JSON array of up to two contact objects.
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ role: 'user', parts: [{ text: PROMPT }] }],
-        generationConfig: { responseMimeType: 'application/json', temperature: 0.2 }
+        generationConfig: { responseMimeType: 'application/json', temperature: 0.1 }
       })
     });
 
@@ -70,13 +101,13 @@ Return ONLY a raw JSON array of up to two contact objects.
     const newContacts = JSON.parse(jsonString);
 
     if (!Array.isArray(newContacts)) {
-      throw new Error("Gemini did not return a valid array of contacts.");
+        throw new Error("Gemini did not return a valid array of contacts.");
     }
     
     const firm = await DB.prepare("SELECT contacts_json FROM firms WHERE id = ?").bind(id).first();
     const existingContacts = JSON.parse(firm.contacts_json || '[]');
     
-    const verifiedNewContacts = newContacts.filter(c => c.contactName && c.contactName !== "..." && c.linkedIn);
+    const verifiedNewContacts = newContacts.filter(c => c.contactName && c.contactName !== "..." && c.linkedIn && c.linkedIn !== "...");
 
     const mergedContacts = [...existingContacts, ...verifiedNewContacts];
 
