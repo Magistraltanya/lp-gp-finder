@@ -23,31 +23,50 @@ export async function onRequestPost({ request, env, params }) {
 
     await ensureContactsSourceColumn(DB);
 
-    // [FINAL VERSION] This prompt commands the AI to use its Google Search tool.
     const PROMPT = `
-You are a data researcher with direct access to the Google Search tool. Your task is to find and verify contact information for key people at "${firmName}".
+<prompt>
+  <role>
+    You are a meticulous, high-accuracy data verification and enrichment specialist. Your sole purpose is to find real, verifiable contact information for key personnel at a given company.
+  </role>
 
-**Rules:**
-1.  You **MUST** use your Google Search tool to find the official company website and the real LinkedIn profiles of its key decision-makers (CEO, Partners, MDs, etc.).
-2.  The "linkedIn" URL in your JSON output **MUST** be a real, working URL that you discovered through search. Do not, under any circumstances, invent a URL.
-3.  If you cannot find a specific piece of information (like an email or phone number) from your search results, you **MUST** use an empty string "".
-4.  Return up to two of the most senior people you can find and verify.
+  <rules>
+    <rule>Your output MUST be ONLY the raw JSON array. Do not include any other text, explanations, or markdown.</rule>
+    <rule>You MUST use your Google Search tool to find and verify all information, especially LinkedIn URLs.</rule>
+    <rule>DO NOT invent or guess any information. An empty string "" is infinitely better than a fake or incorrect data point.</rule>
+    <rule>A valid, working, and correct LinkedIn URL for the contact is the highest priority. If you cannot find a valid URL for a person, do not include them in the results.</rule>
+  </rules>
 
-**Task:**
-Use your Google Search tool to find the required information and fill in the JSON template below.
+  <process>
+    <step id="1">Receive the target company: <company name="${firmName}" website="${website}" />.</step>
+    <step id="2">Use your Google Search tool to find the company's key decision-makers (CEO, Founder, Partner, Managing Director).</step>
+    <step id="3">For each potential lead, use your Google Search tool to verify their current role and the authenticity of their LinkedIn profile URL. A real URL is mandatory.</step>
+    <step id="4">Attempt to find a publicly listed email address via search. If not found, you must use an empty string "".</step>
+    <step id="5">Format up to two of the most senior, fully-verified leads you find into the JSON structure provided.</step>
+  </process>
 
-[
-  {
-    "contactName": "...",
-    "designation": "...",
-    "email": "",
-    "linkedIn": "...",
-    "contactNumber": ""
-  }
-]
+  <final_task>
+  Now, perform this process for the company specified in Step 1 and return ONLY the JSON array.
+  
+  [
+    {
+      "contactName": "...",
+      "designation": "...",
+      "email": "",
+      "linkedIn": "...",
+      "contactNumber": ""
+    },
+    {
+      "contactName": "...",
+      "designation": "...",
+      "email": "",
+      "linkedIn": "...",
+      "contactNumber": ""
+    }
+  ]
+  </final_task>
+</prompt>
 `;
 
-    // Using the Pro model is required for reliable tool use.
     const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=' + GEMINI_KEY;
     
     const geminiRes = await fetch(url, {
@@ -55,11 +74,11 @@ Use your Google Search tool to find the required information and fill in the JSO
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ role: 'user', parts: [{ text: PROMPT }] }],
-        // [NEW] This grants the AI access to Google Search. This is the key change.
         tools: [{
           "Google Search_retrieval": {}
         }],
-        generationConfig: { responseMimeType: 'application/json', temperature: 0.1 }
+        // REMOVED `responseMimeType` to allow for tool use. This fixes the 400 error.
+        generationConfig: { temperature: 0.1 } 
       })
     });
 
@@ -69,7 +88,6 @@ Use your Google Search tool to find the required information and fill in the JSO
 
     const gJson = await geminiRes.json();
     
-    // The response structure for tool-use can be different. We need to find the final JSON response.
     const modelResponsePart = gJson.candidates[0].content.parts.find(part => part.text);
     let txt = modelResponsePart ? modelResponsePart.text : '[]';
 
@@ -81,7 +99,7 @@ Use your Google Search tool to find the required information and fill in the JSO
     }
     
     const firm = await DB.prepare("SELECT contacts_json FROM firms WHERE id = ?").bind(id).first();
-    const existingContacts = JSON.parse(firm.contacts_json || '[]');
+    const existingContacts = JSON.parse(firm.contacts_json || '[]' );
     
     const verifiedNewContacts = newContacts.filter(c => c.contactName && c.contactName !== "..." && c.linkedIn && c.linkedIn !== "...");
 
