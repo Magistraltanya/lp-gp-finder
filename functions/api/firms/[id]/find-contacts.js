@@ -49,7 +49,7 @@ Return ONLY a raw JSON array of up to two contact objects.
 ]
 `;
 
-    const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' + GEMINI_KEY;
+    const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=' + GEMINI_KEY;
     
     const geminiRes = await fetch(url, {
       method: 'POST',
