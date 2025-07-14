@@ -23,16 +23,16 @@ export async function onRequestPost({ request, env, params }) {
 
     await ensureContactsSourceColumn(DB);
 
-    // [NEW] Ultra-strict prompt to eliminate hallucinations and bad links.
+    // [FINAL PROMPT] Incorporates source hierarchy and URL reality checks.
     const PROMPT = `
-You are a factual data researcher. Your task is to find two real, key decision-makers (e.g., Founder, CEO, Partner) for the company "${firmName}" (${website}).
+You are a meticulous financial data researcher. Your task is to find two key decision-makers for the company "${firmName}" (${website}).
 
-**Golden Rule:** It is better to return one high-quality, fully-verified contact than two contacts with fake information. It is better to return an empty field than a fake one.
+**Golden Rule:** A valid, working LinkedIn URL is mandatory. It is better to return ONE fully verified contact with a working URL than two contacts with fake data.
 
-**Mandatory Process:**
-1.  **Verify Existence:** You must simulate searching the web to find real people currently associated with the firm.
-2.  **Validate URLs:** The 'linkedIn' URL MUST be a valid, working link to the correct person's profile. Do not invent URLs.
-3.  **No Placeholders:** You are strictly forbidden from using placeholder text like "Unknown". If data cannot be verified, use an empty string "".
+**Mandatory Research Process:**
+1.  **Source Hierarchy:** You must prioritize sources in this order: Official Company Website ("Team" or "Leadership" page) > Official LinkedIn Page > Reputable secondary sources (e.g., Bloomberg, PitchBook, Crunchbase).
+2.  **URL Reality Check:** Before outputting a LinkedIn URL, you must act as if you are verifying it is a real, active profile for the correct person. Do not guess or generate plausible-looking but fake URLs.
+3.  **No Placeholders:** You are strictly forbidden from using "Unknown" or "N/A". If data cannot be verified from a reputable source, use an empty string "".
 
 **Output Format:**
 Return ONLY a raw JSON array of up to two contact objects.
@@ -49,19 +49,19 @@ Return ONLY a raw JSON array of up to two contact objects.
 ]
 `;
 
-    const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' + GEMINI_KEY;
+    const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=' + GEMINI_KEY;
+    
     const geminiRes = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ role: 'user', parts: [{ text: PROMPT }] }],
-        // Lower temperature to reduce creativity and hallucinations
         generationConfig: { responseMimeType: 'application/json', temperature: 0.2 }
       })
     });
 
     if (!geminiRes.ok) {
-      throw new Error(`Gemini API Error: ${geminiRes.status}`);
+      throw new Error(`Gemini API Error: ${geminiRes.statusText} (${geminiRes.status})`);
     }
 
     const gJson = await geminiRes.json();
@@ -70,14 +70,13 @@ Return ONLY a raw JSON array of up to two contact objects.
     const newContacts = JSON.parse(jsonString);
 
     if (!Array.isArray(newContacts)) {
-        throw new Error("Gemini did not return a valid array of contacts.");
+      throw new Error("Gemini did not return a valid array of contacts.");
     }
     
     const firm = await DB.prepare("SELECT contacts_json FROM firms WHERE id = ?").bind(id).first();
     const existingContacts = JSON.parse(firm.contacts_json || '[]');
     
-    // Filter out any incomplete results from Gemini before merging
-    const verifiedNewContacts = newContacts.filter(c => c.contactName && c.contactName !== "...");
+    const verifiedNewContacts = newContacts.filter(c => c.contactName && c.contactName !== "..." && c.linkedIn);
 
     const mergedContacts = [...existingContacts, ...verifiedNewContacts];
 
