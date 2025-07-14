@@ -23,50 +23,29 @@ export async function onRequestPost({ request, env, params }) {
 
     await ensureContactsSourceColumn(DB);
 
+    // [FINAL, SIMPLIFIED PROMPT] Commands the AI to use its search tool with direct, simple instructions.
     const PROMPT = `
-<prompt>
-  <role>
-    You are a meticulous, high-accuracy data verification and enrichment specialist. Your sole purpose is to find real, verifiable contact information for key personnel at a given company.
-  </role>
+You are a data researcher with access to Google Search. Your task is to find up to two key decision-makers (CEO, Partner, Founder, etc.) for the company "${firmName}" found at "${website}".
 
-  <rules>
-    <rule>Your output MUST be ONLY the raw JSON array. Do not include any other text, explanations, or markdown.</rule>
-    <rule>You MUST use your Google Search tool to find and verify all information, especially LinkedIn URLs.</rule>
-    <rule>DO NOT invent or guess any information. An empty string "" is infinitely better than a fake or incorrect data point.</rule>
-    <rule>A valid, working, and correct LinkedIn URL for the contact is the highest priority. If you cannot find a valid URL for a person, do not include them in the results.</rule>
-  </rules>
+**Instructions:**
+1.  You **MUST** use your Google Search tool to find and verify all information.
+2.  The most important piece of information is a **real, working LinkedIn URL** for each contact. If you cannot find a verified LinkedIn URL for a person, do not include them.
+3.  Do not invent or guess information. If you cannot find a person's email or phone number from your search, you **MUST** use an empty string "".
+4.  Your final output **MUST ONLY** be a raw JSON array containing the contacts you found and verified. Do not include any other text or markdown.
 
-  <process>
-    <step id="1">Receive the target company: <company name="${firmName}" website="${website}" />.</step>
-    <step id="2">Use your Google Search tool to find the company's key decision-makers (CEO, Founder, Partner, Managing Director).</step>
-    <step id="3">For each potential lead, use your Google Search tool to verify their current role and the authenticity of their LinkedIn profile URL. A real URL is mandatory.</step>
-    <step id="4">Attempt to find a publicly listed email address via search. If not found, you must use an empty string "".</step>
-    <step id="5">Format up to two of the most senior, fully-verified leads you find into the JSON structure provided.</step>
-  </process>
-
-  <final_task>
-  Now, perform this process for the company specified in Step 1 and return ONLY the JSON array.
-  
-  [
-    {
-      "contactName": "...",
-      "designation": "...",
-      "email": "",
-      "linkedIn": "...",
-      "contactNumber": ""
-    },
-    {
-      "contactName": "...",
-      "designation": "...",
-      "email": "",
-      "linkedIn": "...",
-      "contactNumber": ""
-    }
-  ]
-  </final_task>
-</prompt>
+**JSON Output Structure:**
+[
+  {
+    "contactName": "First and Last Name",
+    "designation": "Official Title",
+    "email": "",
+    "linkedIn": "https://www.linkedin.com/in/verified-profile-url",
+    "contactNumber": ""
+  }
+]
 `;
 
+    // Using the Pro model is required for reliable tool use.
     const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=' + GEMINI_KEY;
     
     const geminiRes = await fetch(url, {
@@ -77,19 +56,21 @@ export async function onRequestPost({ request, env, params }) {
         tools: [{
           "Google Search_retrieval": {}
         }],
-        // REMOVED `responseMimeType` to allow for tool use. This fixes the 400 error.
-        generationConfig: { temperature: 0.1 } 
+        generationConfig: { temperature: 0.1 }
       })
     });
 
     if (!geminiRes.ok) {
+      const errorBody = await geminiRes.text();
+      console.error("Gemini API Error Response:", errorBody);
       throw new Error(`Gemini API Error: ${geminiRes.statusText} (${geminiRes.status})`);
     }
 
     const gJson = await geminiRes.json();
     
-    const modelResponsePart = gJson.candidates[0].content.parts.find(part => part.text);
-    let txt = modelResponsePart ? modelResponsePart.text : '[]';
+    // Robustly find the part of the response that contains the final text answer.
+    const textPart = gJson.candidates[0].content.parts.find(part => 'text' in part);
+    let txt = textPart ? textPart.text : '[]';
 
     const jsonString = txt.substring(txt.indexOf('['), txt.lastIndexOf(']') + 1);
     const newContacts = JSON.parse(jsonString);
@@ -99,7 +80,7 @@ export async function onRequestPost({ request, env, params }) {
     }
     
     const firm = await DB.prepare("SELECT contacts_json FROM firms WHERE id = ?").bind(id).first();
-    const existingContacts = JSON.parse(firm.contacts_json || '[]' );
+    const existingContacts = JSON.parse(firm.contacts_json || '[]');
     
     const verifiedNewContacts = newContacts.filter(c => c.contactName && c.contactName !== "..." && c.linkedIn && c.linkedIn !== "...");
 
