@@ -59,7 +59,7 @@ tr:hover td{background:var(--white)}
 .modal-box{background:#fff;border-radius:var(--radius);padding:24px;width:92%;max-width:820px;max-height:85%;overflow:auto;box-shadow:var(--shadow);display:flex;flex-direction:column;transform:scale(.95);transition:transform .3s ease}
 .modal.active .modal-box{transform:scale(1)}
 .modal-footer{margin-top:24px;padding-top:16px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;}
-#ct-disclaimer{font-size:11px;color:var(--grey-text);font-style:italic;}
+#ct-disclaimer{font-size:11px;color:var(--grey-text);font-style:italic;margin-right:auto;}
 </style>
 </head><body>
 <aside class="sidebar">
@@ -120,10 +120,21 @@ tr:hover td{background:var(--white)}
 <div class="modal" id="ct-modal"><div class="modal-box">
     <h3 id="ct-title">Contacts</h3>
     <div class="table-wrap">
-        <table id="ct-table"><thead><tr><th>Name</th><th>Designation</th><th>Email</th><th>LinkedIn</th><th>Contact&nbsp;No.</th></tr></thead><tbody id="ct-body"></tbody></table>
+        <table id="ct-table" style="width: 100%; table-layout: fixed;">
+            <thead>
+                <tr>
+                    <th style="width: 25%;">Name</th>
+                    <th style="width: 25%;">Designation</th>
+                    <th style="width: 20%;">Email</th>
+                    <th style="width: 15%;">LinkedIn</th>
+                    <th style="width: 15%;">Contact No.</th>
+                </tr>
+            </thead>
+            <tbody id="ct-body"></tbody>
+        </table>
     </div>
     <div class="modal-footer">
-        <p id="ct-disclaimer" style="display: none; margin-right: auto;">Contacts sourced by AI. Please verify accuracy.</p>
+        <p id="ct-disclaimer" style="display: none;">Contacts sourced by AI. Please verify accuracy.</p>
         <button id="ct-find-btn" class="btn btn-pri" style="width: 200px;">✨ Find Key Contacts</button>
     </div>
 </div></div>
@@ -190,7 +201,7 @@ function renderSubTypeFilters() {
 function renderContactsModal(row) {
     UI.ctTitle.textContent = `Contacts – ${row?.firmName || ''}`;
     UI.ctBody.innerHTML = row?.contacts?.length
-        ? row.contacts.map(c => `<tr><td>${c.contactName||''}</td><td>${c.designation||''}</td><td>${c.email?`<a href="mailto:${c.email}">${c.email}</a>`:''}</td><td>${c.linkedIn?`<a href="${c.linkedIn.startsWith('http')?c.linkedIn:`https://${c.linkedIn}`}" target="_blank">View Profile</a>`:''}</td><td>${c.contactNumber||''}</td></tr>`).join('')
+        ? row.contacts.map(c => `<tr><td>${c.contactName||'N/A'}</td><td>${c.designation||'N/A'}</td><td>${c.email?`<a href="mailto:${c.email}">${c.email}</a>`:'N/A'}</td><td>${c.linkedIn?`<a href="${c.linkedIn.startsWith('http')?c.linkedIn:`https://${c.linkedIn}`}" target="_blank">View Profile</a>`:'N/A'}</td><td>${c.contactNumber||'N/A'}</td></tr>`).join('')
         : '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--grey-text)">No contacts yet. Use the button below to find some!</td></tr>';
     
     UI.ctDisclaimer.style.display = row?.contacts_source === 'Gemini' ? 'block' : 'none';
@@ -266,7 +277,7 @@ function renderPagination(totalRows) {
 
 UI.filterBtns.forEach(b=>b.addEventListener('click',()=>{ UI.filterBtns.forEach(x=>x.classList.remove('active'));b.classList.add('active');view=b.dataset.f;activeSubTypes.clear();currentPage=1;renderSubTypeFilters();render();}));
 [UI.qCountry,UI.qSector,UI.qStage,UI.qSource,UI.search,UI.rowsPerPageSelect].forEach(el=>el.addEventListener('input',()=>{currentPage=1;render();}));
-$('#q-clear').addEventListener('click',()=>{UI.qCountry.value=UI.qSector.value=UI.qStage.value=UI.qSource.value=UI.search.value='';currentPage=1;activeSubTypes.clear();renderSubTypeFilters();render();});
+$('#q-clear').addEventListener('click',()=>{UI.qCountry.value=UI.Sectora.value=UI.qStage.value=UI.qSource.value=UI.search.value='';currentPage=1;activeSubTypes.clear();renderSubTypeFilters();render();});
 UI.subtypeTagsContainer.addEventListener('click', e => { if(e.target.classList.contains('subtype-tag')) { const subtype = e.target.dataset.subtype; if(activeSubTypes.has(subtype)) { activeSubTypes.delete(subtype); } else { activeSubTypes.add(subtype); } currentPage = 1; renderSubTypeFilters(); render(); } });
 UI.colBtn.addEventListener('click',()=>{ UI.colList.innerHTML='';COLS.forEach(c=>{if(c.key==='actions'||c.key==='chk')return;const li=document.createElement('li');li.textContent=c.label;li.dataset.k=c.key;li.classList.toggle('selected',vis.has(c.key));UI.colList.appendChild(li);}); UI.colModal.classList.add('active');});
 UI.colModal.addEventListener('click',e=>{if(e.target.closest('.close')||e.target===UI.colModal)UI.colModal.classList.remove('active');});
