@@ -12,9 +12,9 @@ async function ensureContactsSourceColumn(DB) {
 }
 
 /**
- * Step 2: Uses Tavily Search API to find a verified URL.
+ * Step 2: Uses Tavily Search API to find a list of potential URLs.
  */
-async function searchForContactUrl(query, apiKey) {
+async function searchForContactUrls(query, apiKey) {
   try {
     const response = await fetch('https://api.tavily.com/search', {
       method: 'POST',
@@ -23,17 +23,16 @@ async function searchForContactUrl(query, apiKey) {
         api_key: apiKey,
         query: query,
         search_depth: "basic",
-        max_results: 1,
-        // We add the linkedin domain here to focus the search
-        include_domains: ["linkedin.com"] 
+        max_results: 3, // Get top 3 results to validate
+        include_domains: ["linkedin.com"]
       }),
     });
-    if (!response.ok) return "";
+    if (!response.ok) return [];
     const data = await response.json();
-    return data.results && data.results.length > 0 ? data.results[0].url : "";
+    return data.results || [];
   } catch (e) {
     console.error("Tavily search failed:", e);
-    return "";
+    return [];
   }
 }
 
@@ -50,7 +49,7 @@ export async function onRequestPost({ request, env, params }) {
 
     await ensureContactsSourceColumn(DB);
 
-    // Step 1: Use Gemini to get potential names and titles.
+    // Step 1: Use Gemini as the "Researcher" to get potential names and titles.
     const PROMPT_NAMES = `Your task is to identify the names and titles of up to two key decision-makers (e.g., CEO, Founder, Partner) for the company "${firmName}" (${website}). Return ONLY a raw JSON array of objects with "contactName" and "designation" keys.`;
     
     const geminiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=' + GEMINI_KEY;
@@ -68,19 +67,31 @@ export async function onRequestPost({ request, env, params }) {
     for (const contact of potentialContacts) {
       if (!contact.contactName || !contact.designation) continue;
       
-      // [THE FIX] Using a more natural and effective search query.
+      // Step 2: Use Tavily as the "Investigator" to get top search results.
       const searchQuery = `"${contact.contactName}" "${firmName}" LinkedIn`;
-      const linkedInUrl = await searchForContactUrl(searchQuery, TAVILY_KEY);
+      const searchResults = await searchForContactUrls(searchQuery, TAVILY_KEY);
+      
+      let finalUrl = "";
+
+      // Step 3: Use our code as the "Validator" to find the best link.
+      if (searchResults.length > 0) {
+        // Find the first result that is a personal profile URL.
+        const profileResult = searchResults.find(res => res.url.includes('/in/'));
+        if (profileResult) {
+          finalUrl = profileResult.url;
+        }
+      }
       
       enrichedContacts.push({
         contactName: contact.contactName,
         designation: contact.designation,
         email: "",
-        linkedIn: linkedInUrl,
+        linkedIn: finalUrl, // This is now the validated profile URL, or empty string.
         contactNumber: ""
       });
     }
 
+    // Final data processing and database update
     const firm = await DB.prepare("SELECT contacts_json FROM firms WHERE id = ?").bind(id).first();
     const existingContacts = JSON.parse(firm.contacts_json || '[]');
     const mergedContacts = [...existingContacts, ...enrichedContacts];
