@@ -201,7 +201,7 @@ function renderSubTypeFilters() {
 
 function renderContactsModal(row) {
     UI.ctTitle.textContent = `Contacts – ${row?.firmName || ''}`;
-    UI.ctModal.dataset.firmId = row._id; // Store firm context for enrichment
+    UI.ctModal.dataset.firmId = row._id;
     UI.ctModal.dataset.firmName = row.firmName;
     
     if (row?.contacts?.length > 0) {
@@ -209,9 +209,13 @@ function renderContactsModal(row) {
             const hasDetails = c.linkedIn || c.email || c.contactNumber;
             const linkedInHtml = c.linkedIn ? `<a href="${c.linkedIn.startsWith('http')?c.linkedIn:`https://${c.linkedIn}`}" target="_blank">View Profile</a>` : 'N/A';
             const emailHtml = c.email ? `<a href="mailto:${c.email}">${c.email}</a>` : 'N/A';
-            const enrichBtnHtml = !hasDetails ? `<button class="btn-enrich" data-contact-index="${index}">Enrich Contact ✨</button>` : linkedInHtml;
+            
+            // Show "Enrich" button only if details are missing
+            const actionCellHtml = hasDetails 
+                ? linkedInHtml 
+                : `<button class="btn-enrich" data-contact-index="${index}">Enrich Contact ✨</button>`;
 
-            return `<tr><td>${c.contactName||'N/A'}</td><td>${c.designation||'N/A'}</td><td>${emailHtml}</td><td>${enrichBtnHtml}</td><td>${c.contactNumber||'N/A'}</td></tr>`;
+            return `<tr><td>${c.contactName||'N/A'}</td><td>${c.designation||'N/A'}</td><td>${emailHtml}</td><td>${actionCellHtml}</td><td>${c.contactNumber||'N/A'}</td></tr>`;
         }).join('');
     } else {
         UI.ctBody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--grey-text)">No contacts found. Use the button below to find some!</td></tr>';
@@ -310,7 +314,6 @@ UI.ctFindBtn.addEventListener('click', async () => {
     if (!firmId) return;
     const row = firms.find(x => x._id == firmId);
     if (!row) return;
-    if (row.contacts.length >= 10) { toast('This firm already has a significant number of contacts.', false); return; }
     showO(true);
     UI.ctModal.classList.remove('active');
     try {
@@ -323,20 +326,17 @@ UI.ctFindBtn.addEventListener('click', async () => {
         if (!res.ok) throw new Error(data.error || 'Failed to find contacts.');
         row.contacts = data.contacts;
         row.contacts_source = 'Gemini';
-        toast('New contacts added!', true);
-        render();
-        renderContactsModal(row);
-    } catch(e) { toast(e.message, false); }
+        toast('New contacts discovered!', true);
+        render(); // Update main table count
+        renderContactsModal(row); // Re-open modal with new placeholder contacts
+    } catch(e) { toast(e.message, false); showO(false); }
     finally { showO(false); }
 });
-
-// NEW Event Listener for the Enrich buttons inside the modal
 UI.ctBody.addEventListener('click', async (e) => {
     const btn = e.target.closest('.btn-enrich');
     if (!btn) return;
 
     const firmId = UI.ctModal.dataset.firmId;
-    const firmName = UI.ctModal.dataset.firmName;
     const contactIndex = parseInt(btn.dataset.contactIndex, 10);
     const firm = firms.find(f => f._id == firmId);
     if (!firm || !firm.contacts[contactIndex]) return;
@@ -350,27 +350,19 @@ UI.ctBody.addEventListener('click', async (e) => {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({
-                contactName: contact.contactName,
-                designation: contact.designation,
-                firmName: firmName
+                firmId: firmId,
+                firmName: firm.firmName,
+                contactIndex: contactIndex,
+                contact: contact,
             })
         });
-        const enrichedData = await res.json();
-        if (!res.ok) throw new Error(enrichedData.error || 'Failed to enrich contact.');
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to enrich contact.');
 
-        // Update the specific contact with new details
-        contact.linkedIn = enrichedData.linkedIn;
-        contact.email = enrichedData.email;
-        contact.contactNumber = enrichedData.contactNumber;
+        // Update local firms array with the full, updated contacts list from the server
+        firm.contacts = data.contacts;
 
-        // Save the entire updated contacts list back to the DB
-        await fetch(`/api/firms/${firmId}/find-contacts`, {
-            method: 'POST',
-            headers: {'content-type':'application/json'},
-            body: JSON.stringify({ firmName: firm.firmName, website: firm.website })
-        });
-
-        // Re-render the modal to show the new data
+        toast('Contact enriched!', true);
         renderContactsModal(firm);
 
     } catch (err) {
@@ -379,9 +371,8 @@ UI.ctBody.addEventListener('click', async (e) => {
         btn.disabled = false;
     }
 });
-
 UI.delBulk.addEventListener('click',async()=>{ const ids=[...UI.tbody.querySelectorAll('.rowchk:checked')].map(cb=>cb.dataset.id); if(!ids.length){toast('Nothing selected',false);return;} if(!confirm(`Delete ${ids.length} selected firms?`))return; showO(true); try{ await Promise.all(ids.map(id=>fetch(`/api/firms/${id}`,{method:'DELETE'}))); firms=firms.filter(x=>!ids.includes(String(x._id)));render();toast(`Deleted ${ids.length} firms.`,true); } catch(e){ toast('Bulk delete failed.', false); } finally{ showO(false); }});
-UI.aiBtn.addEventListener('click',async()=>{ const payload={entityType:UI.aiType.value.trim(),subType:UI.aiSub.value.trim(),sector:UI.aiSec.value.trim(),geo:UI.aiGeo.value.trim()}; if(!payload.geo) { toast('Geography is a required field.', false); return; } showO(true); try{ const res=await fetch('/api/find-investors',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)}); const d=await res.json();if(!res.ok)throw new Error(d.error||res.statusText); if (d.added > 0) { d.newFirms.forEach(f => f.isNew = true); firms.unshift(...d.newFirms.map(mapRow)); currentPage = 1; buildFilters();render(); } toast(`${d.newFirms.length} new firms added.`,true); }catch(e){toast(e.message||'Gemini error',false);}finally{showO(false);}});
+UI.aiBtn.addEventListener('click',async()=>{ const payload={entityType:UI.aiType.value.trim(),subType:UI.aiSub.value.trim(),sector:UI.aiSec.value.trim(),geo:UI.aiGeo.value.trim()}; if(!payload.geo) { toast('Geography is a required field.', false); return; } showO(true); try{ const res=await fetch('/api/find-investors',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)}); const d=await res.json();if(!res.ok)throw new Error(d.error||res.statusText); if (d.newFirms && d.newFirms.length > 0) { d.newFirms.forEach(f => f.isNew = true); firms.unshift(...d.newFirms.map(mapRow)); currentPage = 1; buildFilters();render(); toast(`${d.newFirms.length} new firms added.`,true); } else { toast('No new firms found.', true); } }catch(e){toast(e.message||'Gemini error',false);}finally{showO(false);}});
 UI.fileIn.addEventListener('change', e => { const f = e.target.files[0]; if (!f) return; showO(true); const rd = new FileReader(); rd.onload = async ev => { try { const wb = XLSX.read(new Uint8Array(ev.target.result), { type:'array', cellDates:true }); const raw = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval:'' }); const groupedFirms = new Map(); raw.forEach(r => { const firmData = {}; const contactData = {}; for (const [k, v] of Object.entries(r)) { const key = alias[k.toLowerCase().trim()] || k.replace(/\s+/g, ''); if (v) (contactKeys.has(key) ? contactData : firmData)[key] = v; } const uniqueKey = (firmData.website || firmData.firmName || '').toLowerCase().trim(); if (!uniqueKey) return; if (!groupedFirms.has(uniqueKey)) { groupedFirms.set(uniqueKey, { ...firmData, contacts: [] }); } const record = groupedFirms.get(uniqueKey); Object.keys(firmData).forEach(k => { if (!record[k]) record[k] = firmData[k]; }); if (Object.values(contactData).some(Boolean)) record.contacts.push(contactData); }); const payload = [...groupedFirms.values()]; if (!payload.length) throw new Error("No valid data to import."); const res = await fetch('/api/firms', { method : 'POST', headers: { 'content-type':'application/json' }, body : JSON.stringify(payload) }); const { inserted = [], error } = await res.json(); if (error) throw new Error(error); if (inserted.length > 0) { inserted.forEach(f => f.isNew = true); firms.unshift(...inserted.map(mapRow)); currentPage = 1; buildFilters(); render(); } toast(`${inserted.length} firms added or updated.`, true); } catch (err) { console.error(err); toast(err.message || 'Upload failed', false); } finally { showO(false); e.target.value = ''; } }; rd.readAsArrayBuffer(f); });
 UI.expBtn.addEventListener('click',()=>{ const selectedIds = new Set([...UI.tbody.querySelectorAll('.rowchk:checked')].map(cb => cb.dataset.id)); const dataToExport = selectedIds.size > 0 ? firms.filter(f => selectedIds.has(String(f._id))) : firms; if(!dataToExport.length){toast('Nothing to export',false);return;} let csvRows = []; const headers = COLS.filter(c => vis.has(c.key) && !['chk','actions','sn'].includes(c.key)).map(c => c.label); csvRows.push(headers.join(',')); dataToExport.forEach(f => { const row = COLS.filter(c => vis.has(c.key) && !['chk','actions','sn'].includes(c.key)).map(c => `"${String(f[c.key]||'').replace(/"/g,'""')}"`); csvRows.push(row.join(',')); }); const blob=new Blob([csvRows.join('\n')],{type:'text/csv;charset=utf-8;'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='magistral_lp_gp_export.csv'; a.click(); URL.revokeObjectURL(a.href); toast(selectedIds.size > 0 ? 'Exporting selected firms...' : 'Exporting all firms...', true); });
 
