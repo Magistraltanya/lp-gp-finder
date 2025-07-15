@@ -23,22 +23,25 @@ export async function onRequestPost({ request, env, params }) {
 
     await ensureContactsSourceColumn(DB);
 
-    // [FINAL PROMPT - "Show Your Work" Method]
+    // [FINAL PROMPT v2] The most rigorous possible prompt without using the broken 'tools' feature.
     const PROMPT = `
-You are a meticulous data researcher. Your task is to find up to two key decision-makers for the company "${firmName}" (${website}). Your primary objective is to provide VERIFIABLE and ACCURATE data.
+You are a meticulous data researcher. Your task is to find up to two key decision-makers for the company "${firmName}" (${website}). Your primary objective is to provide VERIFIABLE and ACCURATE data by reasoning from your internal knowledge and providing proof.
 
 **CRITICAL INSTRUCTIONS:**
-1.  Your output MUST be a single raw JSON array. Do not include any other text.
-2.  You MUST NOT invent any data, especially LinkedIn URLs. A fake URL is a complete failure.
-3.  For each contact you return, you MUST include a "sourceURL" key containing the exact webpage URL (e.g., the company's team page, a news article, a Bloomberg profile) where you VERIFIED the person's name, title, and LinkedIn URL.
+1.  **Reasoning First:** Before providing an answer, think step-by-step. First, recall information about the company's leadership. Second, recall the standard URL patterns for LinkedIn profiles. Third, construct the most probable, real URL.
+2.  **No Invention:** You MUST NOT invent data. A fake or broken LinkedIn URL is a complete failure of the task. If you are not highly confident that a URL is correct based on your training data, you MUST return an empty string "".
+3.  **Proof of Work:** For each contact you provide, you must include a "reasoning" key that explains *why* you believe the information is correct (e.g., "This person is widely cited as the CEO in public sources, and this is the common URL format for LinkedIn profiles.").
+4.  **Final Output:** Your output MUST be ONLY the raw JSON array.
 
 **JSON OUTPUT FORMAT:**
 [
   {
     "contactName": "Full Name of the Person",
     "designation": "Their Official Title",
-    "linkedIn": "The DIRECT and VERIFIED URL to their personal LinkedIn profile.",
-    "sourceURL": "The webpage URL that proves the contact's details are correct."
+    "linkedIn": "The most probable, valid URL to their personal LinkedIn profile.",
+    "email": "",
+    "contactNumber": "",
+    "reasoning": "A brief explanation of why this information is believed to be accurate."
   }
 ]
 `;
@@ -50,14 +53,11 @@ You are a meticulous data researcher. Your task is to find up to two key decisio
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ role: 'user', parts: [{ text: PROMPT }] }],
-        // Re-introducing responseMimeType as we are no longer using tools
-        generationConfig: { responseMimeType: 'application/json', temperature: 0.1 }
+        generationConfig: { responseMimeType: 'application/json', temperature: 0.0 }
       })
     });
 
     if (!geminiRes.ok) {
-      const errorBody = await geminiRes.text();
-      console.error("Gemini API Error Response:", errorBody);
       throw new Error(`Gemini API Error: ${geminiRes.statusText} (${geminiRes.status})`);
     }
 
@@ -69,19 +69,18 @@ You are a meticulous data researcher. Your task is to find up to two key decisio
         throw new Error("Gemini did not return a valid array of contacts.");
     }
     
-    // Map the AI response to the structure our database expects, ignoring the sourceURL
     const formattedContacts = newContactsFromAI.map(c => ({
-      contactName: c.contactName,
-      designation: c.designation,
-      email: "", // We are not asking for email to improve reliability
-      linkedIn: c.linkedIn,
-      contactNumber: "" // We are not asking for phone to improve reliability
+      contactName: c.contactName || "",
+      designation: c.designation || "",
+      email: c.email || "",
+      linkedIn: c.linkedIn || "",
+      contactNumber: c.contactNumber || ""
     }));
-
+    
     const firm = await DB.prepare("SELECT contacts_json FROM firms WHERE id = ?").bind(id).first();
     const existingContacts = JSON.parse(firm.contacts_json || '[]');
     
-    const verifiedNewContacts = formattedContacts.filter(c => c.contactName && c.contactName !== "..." && c.linkedIn && c.linkedIn !== "...");
+    const verifiedNewContacts = formattedContacts.filter(c => c.contactName && c.contactName !== "...");
 
     const mergedContacts = [...existingContacts, ...verifiedNewContacts];
 
