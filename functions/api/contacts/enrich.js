@@ -1,13 +1,13 @@
 export async function onRequestPost({ request, env }) {
   try {
     const { DB, GEMINI_KEY } = env;
-    const { firmId, firmName, contactIndex, contact } = await request.json();
+    // The front-end now sends all necessary data
+    const { firmId, contactIndex, contact, firmName } = await request.json();
 
-    if (!firmId || !contact || !contact.contactName) {
+    if (!firmId || contactIndex === undefined || !contact || !contact.contactName) {
       return new Response(JSON.stringify({ error: 'Missing required data to enrich contact.' }), { status: 400 });
     }
 
-    // [THE FIX] The new, ultra-precise prompt based on YOUR expert methodology.
     const PROMPT_ENRICH = `
 You are an expert Lead Generation Specialist. Your task is to perform a rigorous, multi-step research process to find the accurate contact details for a specific person at a specific company.
 
@@ -62,7 +62,7 @@ Return a single, raw JSON object with the verified data you have found. If a pie
     const gJson = await geminiRes.json();
     const enrichedData = JSON.parse(gJson.candidates[0].content.parts[0].text);
 
-    // Get the firm's current contacts, update the specific one, and save back to the DB.
+    // Get the firm's current contacts
     const firm = await DB.prepare("SELECT contacts_json FROM firms WHERE id = ?").bind(firmId).first();
     let contacts = JSON.parse(firm.contacts_json || '[]');
     
@@ -70,7 +70,8 @@ Return a single, raw JSON object with the verified data you have found. If a pie
     if (contacts[contactIndex]) {
         contacts[contactIndex].email = enrichedData.email || "";
         contacts[contactIndex].linkedIn = enrichedData.linkedIn || "";
-        contacts[contactNumber] = enrichedData.contactNumber || "";
+        // [THE FIX] Corrected the typo on the line below
+        contacts[contactIndex].contactNumber = enrichedData.contactNumber || "";
     }
 
     // Save the entire updated array back to the database.
