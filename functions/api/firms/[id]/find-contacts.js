@@ -23,8 +23,7 @@ async function searchForContactUrl(query, apiKey) {
         api_key: apiKey,
         query: query,
         search_depth: "basic",
-        max_results: 1,
-        include_domains: ["linkedin.com"]
+        max_results: 1
       }),
     });
     if (!response.ok) return "";
@@ -49,7 +48,6 @@ export async function onRequestPost({ request, env, params }) {
 
     await ensureContactsSourceColumn(DB);
 
-    // Step 1: Use Gemini as the "Researcher" to get potential names and titles.
     const PROMPT_NAMES = `Your task is to identify the names and titles of up to two key decision-makers (e.g., CEO, Founder, Partner) for the company "${firmName}" (${website}). Return ONLY a raw JSON array of objects with "contactName" and "designation" keys.`;
     
     const geminiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=' + GEMINI_KEY;
@@ -69,22 +67,21 @@ export async function onRequestPost({ request, env, params }) {
     let enrichedContacts = [];
 
     for (const contact of potentialContacts) {
-      if (!contact.contactName || !contact.designation) continue;
+      if (!contact.contactName) continue;
       
-      // Step 2: Use Tavily as the "Investigator" to find the real LinkedIn URL.
-      const searchQuery = `"${contact.contactName}" "${contact.designation}" "${firmName}" LinkedIn Profile`;
+      // [THE FINAL FIX] Using a simpler, more effective search query.
+      const searchQuery = `"${contact.contactName}" "${firmName}" site:linkedin.com/in`;
       const linkedInUrl = await searchForContactUrl(searchQuery, TAVILY_KEY);
       
       enrichedContacts.push({
         contactName: contact.contactName,
         designation: contact.designation,
         email: "",
-        linkedIn: linkedInUrl, // This will be the REAL URL from the search, or empty.
+        linkedIn: linkedInUrl,
         contactNumber: ""
       });
     }
 
-    // Final data processing and database update
     const firm = await DB.prepare("SELECT contacts_json FROM firms WHERE id = ?").bind(id).first();
     const existingContacts = JSON.parse(firm.contacts_json || '[]');
     const mergedContacts = [...existingContacts, ...enrichedContacts];
