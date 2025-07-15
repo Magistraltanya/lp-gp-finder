@@ -1,26 +1,45 @@
-// functions/api/contacts/enrich.js
 export async function onRequestPost({ request, env }) {
   try {
-    const { GEMINI_KEY } = env;
-    const { contactName, designation, firmName } = await request.json();
+    const { DB, GEMINI_KEY } = env;
+    const { firmId, firmName, contactIndex, contact } = await request.json();
 
-    if (!contactName || !firmName) {
-      return new Response(JSON.stringify({ error: 'Contact Name and Firm Name are required' }), { status: 400 });
+    if (!firmId || !contact || !contact.contactName) {
+      return new Response(JSON.stringify({ error: 'Missing required data to enrich contact.' }), { status: 400 });
     }
 
+    // [THE FIX] The new, ultra-precise prompt based on YOUR expert methodology.
     const PROMPT_ENRICH = `
-You are a high-accuracy data enrichment specialist. Your task is to find the specific contact details for a known individual at a known company.
+You are an expert Lead Generation Specialist. Your task is to perform a rigorous, multi-step research process to find the accurate contact details for a specific person at a specific company.
 
-**Individual:** ${contactName}
-**Title:** ${designation}
-**Company:** ${firmName}
+**Target:**
+* **Person:** "${contact.contactName}"
+* **Title:** "${contact.designation}"
+* **Company:** "${firmName}"
 
-**Instructions:**
-1.  Perform a targeted search to find the official LinkedIn profile, a verifiable email address, and a contact phone number for this specific person.
-2.  Prioritize accuracy. If a piece of data cannot be found, use an empty string "". Do not guess.
-3.  Your output MUST be a single, raw JSON object.
+---
+### **Mandatory Research Methodology**
 
-**JSON Output Structure:**
+**Step 1: Website & Google Verification**
+* First, search Google for the company's official website. Navigate to any "Team", "Leadership", or "About Us" pages to confirm the person's role.
+* If a team page is not available, perform targeted Google searches like \`"${contact.contactName}" "${firmName}"\` to verify the role using at least two independent sources (e.g., a LinkedIn profile and a news article).
+
+**Step 2: LinkedIn Verification**
+* Find the individual's real, personal LinkedIn profile URL. The URL format must be \`https://www.linkedin.com/in/...\`.
+* You must verify that their current listed employer on the profile matches the target company. **A fake or incorrect URL is a complete failure of this task.**
+
+**Step 3: Accurate Email Identification**
+* Use advanced Google searches like \`"${contact.contactName}" email\` and \`*@companydomain.com filetype:pdf\` to find publicly listed emails and verify the company's email pattern.
+* Construct the most likely email for the target person using a verified pattern. If no pattern can be verified, leave the email as an empty string. Do not use generic \`info@\` emails.
+
+**Step 4: Phone Number Identification**
+* Check the verified LinkedIn profile's "Contact Info" section or official company biographies for a direct phone number. If unavailable, leave as an empty string.
+
+---
+### **Final Output**
+
+Return a single, raw JSON object with the verified data you have found. If a piece of information cannot be verified through this rigorous process, you **MUST** use an empty string "".
+
+**JSON Structure:**
 {
   "email": "...",
   "linkedIn": "...",
@@ -32,17 +51,32 @@ You are a high-accuracy data enrichment specialist. Your task is to find the spe
     const geminiRes = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: PROMPT_ENRICH }] }], generationConfig: { responseMimeType: 'application/json', temperature: 0.1 } })
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: PROMPT_ENRICH }] }],
+        generationConfig: { responseMimeType: 'application/json', temperature: 0.1 }
+      })
     });
 
-    if (!geminiRes.ok) {
-      throw new Error(`Gemini Enrichment API Error: ${geminiRes.statusText}`);
-    }
+    if (!geminiRes.ok) { throw new Error(`Gemini Enrichment API Error: ${geminiRes.statusText}`); }
 
     const gJson = await geminiRes.json();
     const enrichedData = JSON.parse(gJson.candidates[0].content.parts[0].text);
 
-    return new Response(JSON.stringify(enrichedData), { headers: { 'content-type': 'application/json' } });
+    // Get the firm's current contacts, update the specific one, and save back to the DB.
+    const firm = await DB.prepare("SELECT contacts_json FROM firms WHERE id = ?").bind(firmId).first();
+    let contacts = JSON.parse(firm.contacts_json || '[]');
+    
+    // Update the specific contact at the given index
+    if (contacts[contactIndex]) {
+        contacts[contactIndex].email = enrichedData.email || "";
+        contacts[contactIndex].linkedIn = enrichedData.linkedIn || "";
+        contacts[contactNumber] = enrichedData.contactNumber || "";
+    }
+
+    // Save the entire updated array back to the database.
+    await DB.prepare(`UPDATE firms SET contacts_json = ?1 WHERE id = ?2`).bind(JSON.stringify(contacts), firmId).run();
+
+    return new Response(JSON.stringify({ contacts: contacts }), { headers: { 'content-type': 'application/json' } });
 
   } catch (e) {
     console.error("Enrich Contact Error:", e);
