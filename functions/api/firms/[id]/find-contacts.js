@@ -23,29 +23,26 @@ export async function onRequestPost({ request, env, params }) {
 
     await ensureContactsSourceColumn(DB);
 
-    // [FINAL, SIMPLIFIED PROMPT] Commands the AI to use its search tool with direct, simple instructions.
+    // [FINAL PROMPT - "Show Your Work" Method]
     const PROMPT = `
-You are a data researcher with access to Google Search. Your task is to find up to two key decision-makers (CEO, Partner, Founder, etc.) for the company "${firmName}" found at "${website}".
+You are a meticulous data researcher. Your task is to find up to two key decision-makers for the company "${firmName}" (${website}). Your primary objective is to provide VERIFIABLE and ACCURATE data.
 
-**Instructions:**
-1.  You **MUST** use your Google Search tool to find and verify all information.
-2.  The most important piece of information is a **real, working LinkedIn URL** for each contact. If you cannot find a verified LinkedIn URL for a person, do not include them.
-3.  Do not invent or guess information. If you cannot find a person's email or phone number from your search, you **MUST** use an empty string "".
-4.  Your final output **MUST ONLY** be a raw JSON array containing the contacts you found and verified. Do not include any other text or markdown.
+**CRITICAL INSTRUCTIONS:**
+1.  Your output MUST be a single raw JSON array. Do not include any other text.
+2.  You MUST NOT invent any data, especially LinkedIn URLs. A fake URL is a complete failure.
+3.  For each contact you return, you MUST include a "sourceURL" key containing the exact webpage URL (e.g., the company's team page, a news article, a Bloomberg profile) where you VERIFIED the person's name, title, and LinkedIn URL.
 
-**JSON Output Structure:**
+**JSON OUTPUT FORMAT:**
 [
   {
-    "contactName": "First and Last Name",
-    "designation": "Official Title",
-    "email": "",
-    "linkedIn": "https://www.linkedin.com/in/verified-profile-url",
-    "contactNumber": ""
+    "contactName": "Full Name of the Person",
+    "designation": "Their Official Title",
+    "linkedIn": "The DIRECT and VERIFIED URL to their personal LinkedIn profile.",
+    "sourceURL": "The webpage URL that proves the contact's details are correct."
   }
 ]
 `;
 
-    // Using the Pro model is required for reliable tool use.
     const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=' + GEMINI_KEY;
     
     const geminiRes = await fetch(url, {
@@ -53,10 +50,8 @@ You are a data researcher with access to Google Search. Your task is to find up 
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ role: 'user', parts: [{ text: PROMPT }] }],
-        tools: [{
-          "Google Search_retrieval": {}
-        }],
-        generationConfig: { temperature: 0.1 }
+        // Re-introducing responseMimeType as we are no longer using tools
+        generationConfig: { responseMimeType: 'application/json', temperature: 0.1 }
       })
     });
 
@@ -67,22 +62,26 @@ You are a data researcher with access to Google Search. Your task is to find up 
     }
 
     const gJson = await geminiRes.json();
-    
-    // Robustly find the part of the response that contains the final text answer.
-    const textPart = gJson.candidates[0].content.parts.find(part => 'text' in part);
-    let txt = textPart ? textPart.text : '[]';
+    let txt = gJson?.candidates?.[0]?.content?.parts?.[0]?.text ?? '[]';
+    const newContactsFromAI = JSON.parse(txt);
 
-    const jsonString = txt.substring(txt.indexOf('['), txt.lastIndexOf(']') + 1);
-    const newContacts = JSON.parse(jsonString);
-
-    if (!Array.isArray(newContacts)) {
+    if (!Array.isArray(newContactsFromAI)) {
         throw new Error("Gemini did not return a valid array of contacts.");
     }
     
+    // Map the AI response to the structure our database expects, ignoring the sourceURL
+    const formattedContacts = newContactsFromAI.map(c => ({
+      contactName: c.contactName,
+      designation: c.designation,
+      email: "", // We are not asking for email to improve reliability
+      linkedIn: c.linkedIn,
+      contactNumber: "" // We are not asking for phone to improve reliability
+    }));
+
     const firm = await DB.prepare("SELECT contacts_json FROM firms WHERE id = ?").bind(id).first();
     const existingContacts = JSON.parse(firm.contacts_json || '[]');
     
-    const verifiedNewContacts = newContacts.filter(c => c.contactName && c.contactName !== "..." && c.linkedIn && c.linkedIn !== "...");
+    const verifiedNewContacts = formattedContacts.filter(c => c.contactName && c.contactName !== "..." && c.linkedIn && c.linkedIn !== "...");
 
     const mergedContacts = [...existingContacts, ...verifiedNewContacts];
 
