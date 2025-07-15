@@ -210,7 +210,6 @@ function renderContactsModal(row) {
             const linkedInHtml = c.linkedIn ? `<a href="${c.linkedIn.startsWith('http')?c.linkedIn:`https://${c.linkedIn}`}" target="_blank">View Profile</a>` : 'N/A';
             const emailHtml = c.email ? `<a href="mailto:${c.email}">${c.email}</a>` : 'N/A';
             
-            // Show "Enrich" button only if details are missing
             const actionCellHtml = hasDetails 
                 ? linkedInHtml 
                 : `<button class="btn-enrich" data-contact-index="${index}">Enrich Contact ✨</button>`;
@@ -332,6 +331,8 @@ UI.ctFindBtn.addEventListener('click', async () => {
     } catch(e) { toast(e.message, false); showO(false); }
     finally { showO(false); }
 });
+
+// MODIFIED: Event listener is now on the modal body for delegation
 UI.ctBody.addEventListener('click', async (e) => {
     const btn = e.target.closest('.btn-enrich');
     if (!btn) return;
@@ -352,6 +353,7 @@ UI.ctBody.addEventListener('click', async (e) => {
             body: JSON.stringify({
                 firmId: firmId,
                 firmName: firm.firmName,
+                firmWebsite: firm.website, // Pass website for better searching
                 contactIndex: contactIndex,
                 contact: contact,
             })
@@ -371,6 +373,7 @@ UI.ctBody.addEventListener('click', async (e) => {
         btn.disabled = false;
     }
 });
+
 UI.delBulk.addEventListener('click',async()=>{ const ids=[...UI.tbody.querySelectorAll('.rowchk:checked')].map(cb=>cb.dataset.id); if(!ids.length){toast('Nothing selected',false);return;} if(!confirm(`Delete ${ids.length} selected firms?`))return; showO(true); try{ await Promise.all(ids.map(id=>fetch(`/api/firms/${id}`,{method:'DELETE'}))); firms=firms.filter(x=>!ids.includes(String(x._id)));render();toast(`Deleted ${ids.length} firms.`,true); } catch(e){ toast('Bulk delete failed.', false); } finally{ showO(false); }});
 UI.aiBtn.addEventListener('click',async()=>{ const payload={entityType:UI.aiType.value.trim(),subType:UI.aiSub.value.trim(),sector:UI.aiSec.value.trim(),geo:UI.aiGeo.value.trim()}; if(!payload.geo) { toast('Geography is a required field.', false); return; } showO(true); try{ const res=await fetch('/api/find-investors',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)}); const d=await res.json();if(!res.ok)throw new Error(d.error||res.statusText); if (d.newFirms && d.newFirms.length > 0) { d.newFirms.forEach(f => f.isNew = true); firms.unshift(...d.newFirms.map(mapRow)); currentPage = 1; buildFilters();render(); toast(`${d.newFirms.length} new firms added.`,true); } else { toast('No new firms found.', true); } }catch(e){toast(e.message||'Gemini error',false);}finally{showO(false);}});
 UI.fileIn.addEventListener('change', e => { const f = e.target.files[0]; if (!f) return; showO(true); const rd = new FileReader(); rd.onload = async ev => { try { const wb = XLSX.read(new Uint8Array(ev.target.result), { type:'array', cellDates:true }); const raw = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval:'' }); const groupedFirms = new Map(); raw.forEach(r => { const firmData = {}; const contactData = {}; for (const [k, v] of Object.entries(r)) { const key = alias[k.toLowerCase().trim()] || k.replace(/\s+/g, ''); if (v) (contactKeys.has(key) ? contactData : firmData)[key] = v; } const uniqueKey = (firmData.website || firmData.firmName || '').toLowerCase().trim(); if (!uniqueKey) return; if (!groupedFirms.has(uniqueKey)) { groupedFirms.set(uniqueKey, { ...firmData, contacts: [] }); } const record = groupedFirms.get(uniqueKey); Object.keys(firmData).forEach(k => { if (!record[k]) record[k] = firmData[k]; }); if (Object.values(contactData).some(Boolean)) record.contacts.push(contactData); }); const payload = [...groupedFirms.values()]; if (!payload.length) throw new Error("No valid data to import."); const res = await fetch('/api/firms', { method : 'POST', headers: { 'content-type':'application/json' }, body : JSON.stringify(payload) }); const { inserted = [], error } = await res.json(); if (error) throw new Error(error); if (inserted.length > 0) { inserted.forEach(f => f.isNew = true); firms.unshift(...inserted.map(mapRow)); currentPage = 1; buildFilters(); render(); } toast(`${inserted.length} firms added or updated.`, true); } catch (err) { console.error(err); toast(err.message || 'Upload failed', false); } finally { showO(false); e.target.value = ''; } }; rd.readAsArrayBuffer(f); });
