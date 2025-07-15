@@ -23,7 +23,9 @@ async function searchForContactUrl(query, apiKey) {
         api_key: apiKey,
         query: query,
         search_depth: "basic",
-        max_results: 1
+        max_results: 1,
+        // We add the linkedin domain here to focus the search
+        include_domains: ["linkedin.com"] 
       }),
     });
     if (!response.ok) return "";
@@ -48,6 +50,7 @@ export async function onRequestPost({ request, env, params }) {
 
     await ensureContactsSourceColumn(DB);
 
+    // Step 1: Use Gemini to get potential names and titles.
     const PROMPT_NAMES = `Your task is to identify the names and titles of up to two key decision-makers (e.g., CEO, Founder, Partner) for the company "${firmName}" (${website}). Return ONLY a raw JSON array of objects with "contactName" and "designation" keys.`;
     
     const geminiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=' + GEMINI_KEY;
@@ -56,21 +59,17 @@ export async function onRequestPost({ request, env, params }) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: PROMPT_NAMES }] }], generationConfig: { responseMimeType: 'application/json', temperature: 0.2 } })
     });
-
-    if (!geminiRes.ok) {
-      throw new Error(`Gemini API Error: ${geminiRes.statusText}`);
-    }
-
+    if (!geminiRes.ok) throw new Error(`Gemini API Error: ${geminiRes.statusText}`);
     const gJson = await geminiRes.json();
     const potentialContacts = JSON.parse(gJson.candidates[0].content.parts[0].text);
 
     let enrichedContacts = [];
 
     for (const contact of potentialContacts) {
-      if (!contact.contactName) continue;
+      if (!contact.contactName || !contact.designation) continue;
       
-      // [THE FINAL FIX] Using a simpler, more effective search query.
-      const searchQuery = `"${contact.contactName}" "${firmName}" site:linkedin.com/in`;
+      // [THE FIX] Using a more natural and effective search query.
+      const searchQuery = `"${contact.contactName}" "${firmName}" LinkedIn`;
       const linkedInUrl = await searchForContactUrl(searchQuery, TAVILY_KEY);
       
       enrichedContacts.push({
