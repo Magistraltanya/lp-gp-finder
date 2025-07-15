@@ -52,6 +52,7 @@ tr:hover td{background:var(--white)}
 .icon .count{font-size:12px;background:var(--grey-text);color:white;padding:1px 5px;border-radius:10px}
 .icon.del{color:#b60000}
 .icon.del:hover{color:#8c0000}
+.btn-enrich{padding:2px 8px;font-size:11px;border-radius:4px;background:var(--gold);color:white;cursor:pointer;border:none;}.btn-enrich:hover{background:#a18b4c}
 #overlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(255,255,255,.6);z-index:300;backdrop-filter:blur(4px)}
 .spinner{width:44px;height:44px;border:5px solid rgba(0,0,0,.12);border-top-color:var(--blue-dark);border-radius:50%;animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:500;opacity:0;pointer-events:none;transition:opacity .3s ease}
@@ -200,12 +201,23 @@ function renderSubTypeFilters() {
 
 function renderContactsModal(row) {
     UI.ctTitle.textContent = `Contacts – ${row?.firmName || ''}`;
-    UI.ctBody.innerHTML = row?.contacts?.length
-        ? row.contacts.map(c => `<tr><td>${c.contactName||'N/A'}</td><td>${c.designation||'N/A'}</td><td>${c.email?`<a href="mailto:${c.email}">${c.email}</a>`:'N/A'}</td><td>${c.linkedIn?`<a href="${c.linkedIn.startsWith('http')?c.linkedIn:`https://${c.linkedIn}`}" target="_blank">View Profile</a>`:'N/A'}</td><td>${c.contactNumber||'N/A'}</td></tr>`).join('')
-        : '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--grey-text)">No contacts yet. Use the button below to find some!</td></tr>';
+    UI.ctModal.dataset.firmId = row._id; // Store firm context for enrichment
+    UI.ctModal.dataset.firmName = row.firmName;
+    
+    if (row?.contacts?.length > 0) {
+        UI.ctBody.innerHTML = row.contacts.map((c, index) => {
+            const hasDetails = c.linkedIn || c.email || c.contactNumber;
+            const linkedInHtml = c.linkedIn ? `<a href="${c.linkedIn.startsWith('http')?c.linkedIn:`https://${c.linkedIn}`}" target="_blank">View Profile</a>` : 'N/A';
+            const emailHtml = c.email ? `<a href="mailto:${c.email}">${c.email}</a>` : 'N/A';
+            const enrichBtnHtml = !hasDetails ? `<button class="btn-enrich" data-contact-index="${index}">Enrich Contact ✨</button>` : linkedInHtml;
+
+            return `<tr><td>${c.contactName||'N/A'}</td><td>${c.designation||'N/A'}</td><td>${emailHtml}</td><td>${enrichBtnHtml}</td><td>${c.contactNumber||'N/A'}</td></tr>`;
+        }).join('');
+    } else {
+        UI.ctBody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--grey-text)">No contacts found. Use the button below to find some!</td></tr>';
+    }
     
     UI.ctDisclaimer.style.display = row?.contacts_source === 'Gemini' ? 'block' : 'none';
-    UI.ctModal.dataset.firmId = row._id;
     UI.ctModal.classList.add('active');
 }
 
@@ -275,6 +287,8 @@ function renderPagination(totalRows) {
     UI.paginationContainer.appendChild(createButton('Next ›', currentPage + 1, currentPage === totalPages));
 }
 
+// --- EVENT LISTENERS ---
+
 UI.filterBtns.forEach(b=>b.addEventListener('click',()=>{ UI.filterBtns.forEach(x=>x.classList.remove('active'));b.classList.add('active');view=b.dataset.f;activeSubTypes.clear();currentPage=1;renderSubTypeFilters();render();}));
 [UI.qCountry,UI.qSector,UI.qStage,UI.qSource,UI.search,UI.rowsPerPageSelect].forEach(el=>el.addEventListener('input',()=>{currentPage=1;render();}));
 $('#q-clear').addEventListener('click',()=>{UI.qCountry.value=UI.Sectora.value=UI.qStage.value=UI.qSource.value=UI.search.value='';currentPage=1;activeSubTypes.clear();renderSubTypeFilters();render();});
@@ -287,11 +301,7 @@ UI.tbody.addEventListener('click',async e=>{
     if (e.target.classList.contains('expandable')) { e.target.classList.toggle('expanded'); return; }
     const icon=e.target.closest('[data-act]');if(!icon)return;
     const id=icon.dataset.id,act=icon.dataset.act;
-    if(act==='ct'){
-        const row=firms.find(x=>x._id==id);
-        renderContactsModal(row);
-        return;
-    }
+    if(act==='ct'){ const row=firms.find(x=>x._id==id); renderContactsModal(row); return; }
     if(act==='del'){ if(!confirm('Are you sure you want to delete this firm?'))return; showO(true); try{const res=await fetch(`/api/firms/${id}`,{method:'DELETE'}); if(!res.ok) throw new Error('Failed to delete'); firms=firms.filter(x=>x._id!=id);render();toast('Deleted successfully',true);} catch(e){ toast(e.message, false); } finally{ showO(false); }}
 });
 UI.ctModal.addEventListener('click',e=>{if(e.target.closest('.close')||e.target===UI.ctModal)UI.ctModal.classList.remove('active');});
@@ -316,12 +326,60 @@ UI.ctFindBtn.addEventListener('click', async () => {
         toast('New contacts added!', true);
         render();
         renderContactsModal(row);
-    } catch(e) {
-        toast(e.message, false);
-    } finally {
-        showO(false);
+    } catch(e) { toast(e.message, false); }
+    finally { showO(false); }
+});
+
+// NEW Event Listener for the Enrich buttons inside the modal
+UI.ctBody.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.btn-enrich');
+    if (!btn) return;
+
+    const firmId = UI.ctModal.dataset.firmId;
+    const firmName = UI.ctModal.dataset.firmName;
+    const contactIndex = parseInt(btn.dataset.contactIndex, 10);
+    const firm = firms.find(f => f._id == firmId);
+    if (!firm || !firm.contacts[contactIndex]) return;
+
+    const contact = firm.contacts[contactIndex];
+    btn.textContent = '...';
+    btn.disabled = true;
+
+    try {
+        const res = await fetch('/api/contacts/enrich', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+                contactName: contact.contactName,
+                designation: contact.designation,
+                firmName: firmName
+            })
+        });
+        const enrichedData = await res.json();
+        if (!res.ok) throw new Error(enrichedData.error || 'Failed to enrich contact.');
+
+        // Update the specific contact with new details
+        contact.linkedIn = enrichedData.linkedIn;
+        contact.email = enrichedData.email;
+        contact.contactNumber = enrichedData.contactNumber;
+
+        // Save the entire updated contacts list back to the DB
+        await fetch(`/api/firms/${firmId}/find-contacts`, {
+            method: 'POST',
+            headers: {'content-type':'application/json'},
+            body: JSON.stringify({ firmName: firm.firmName, website: firm.website })
+        });
+
+        // Re-render the modal to show the new data
+        renderContactsModal(firm);
+
+    } catch (err) {
+        toast(err.message, false);
+        btn.textContent = 'Enrich Contact ✨';
+        btn.disabled = false;
     }
 });
+
 UI.delBulk.addEventListener('click',async()=>{ const ids=[...UI.tbody.querySelectorAll('.rowchk:checked')].map(cb=>cb.dataset.id); if(!ids.length){toast('Nothing selected',false);return;} if(!confirm(`Delete ${ids.length} selected firms?`))return; showO(true); try{ await Promise.all(ids.map(id=>fetch(`/api/firms/${id}`,{method:'DELETE'}))); firms=firms.filter(x=>!ids.includes(String(x._id)));render();toast(`Deleted ${ids.length} firms.`,true); } catch(e){ toast('Bulk delete failed.', false); } finally{ showO(false); }});
 UI.aiBtn.addEventListener('click',async()=>{ const payload={entityType:UI.aiType.value.trim(),subType:UI.aiSub.value.trim(),sector:UI.aiSec.value.trim(),geo:UI.aiGeo.value.trim()}; if(!payload.geo) { toast('Geography is a required field.', false); return; } showO(true); try{ const res=await fetch('/api/find-investors',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)}); const d=await res.json();if(!res.ok)throw new Error(d.error||res.statusText); if (d.added > 0) { d.newFirms.forEach(f => f.isNew = true); firms.unshift(...d.newFirms.map(mapRow)); currentPage = 1; buildFilters();render(); } toast(`${d.newFirms.length} new firms added.`,true); }catch(e){toast(e.message||'Gemini error',false);}finally{showO(false);}});
 UI.fileIn.addEventListener('change', e => { const f = e.target.files[0]; if (!f) return; showO(true); const rd = new FileReader(); rd.onload = async ev => { try { const wb = XLSX.read(new Uint8Array(ev.target.result), { type:'array', cellDates:true }); const raw = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval:'' }); const groupedFirms = new Map(); raw.forEach(r => { const firmData = {}; const contactData = {}; for (const [k, v] of Object.entries(r)) { const key = alias[k.toLowerCase().trim()] || k.replace(/\s+/g, ''); if (v) (contactKeys.has(key) ? contactData : firmData)[key] = v; } const uniqueKey = (firmData.website || firmData.firmName || '').toLowerCase().trim(); if (!uniqueKey) return; if (!groupedFirms.has(uniqueKey)) { groupedFirms.set(uniqueKey, { ...firmData, contacts: [] }); } const record = groupedFirms.get(uniqueKey); Object.keys(firmData).forEach(k => { if (!record[k]) record[k] = firmData[k]; }); if (Object.values(contactData).some(Boolean)) record.contacts.push(contactData); }); const payload = [...groupedFirms.values()]; if (!payload.length) throw new Error("No valid data to import."); const res = await fetch('/api/firms', { method : 'POST', headers: { 'content-type':'application/json' }, body : JSON.stringify(payload) }); const { inserted = [], error } = await res.json(); if (error) throw new Error(error); if (inserted.length > 0) { inserted.forEach(f => f.isNew = true); firms.unshift(...inserted.map(mapRow)); currentPage = 1; buildFilters(); render(); } toast(`${inserted.length} firms added or updated.`, true); } catch (err) { console.error(err); toast(err.message || 'Upload failed', false); } finally { showO(false); e.target.value = ''; } }; rd.readAsArrayBuffer(f); });
