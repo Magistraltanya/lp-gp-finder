@@ -11,82 +11,76 @@ async function ensureContactsSourceColumn(DB) {
   }
 }
 
+// Helper function to call the Tavily Search API
+async function searchForContact(query, apiKey) {
+  const response = await fetch('https://api.tavily.com/search', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      api_key: apiKey,
+      query: query,
+      search_depth: "basic",
+      include_domains: ["linkedin.com"],
+      max_results: 1
+    }),
+  });
+  if (!response.ok) return null;
+  const data = await response.json();
+  return data.results && data.results.length > 0 ? data.results[0] : null;
+}
+
+
 export async function onRequestPost({ request, env, params }) {
   try {
-    const { DB, GEMINI_KEY } = env;
+    const { DB, GEMINI_KEY, TAVILY_KEY } = env; // Assumes you've added TAVILY_KEY
     const { id } = params;
     const { firmName, website } = await request.json();
 
-    if (!id || !firmName) {
-      return new Response(JSON.stringify({ error: 'Firm ID and Name are required' }), { status: 400 });
+    if (!TAVILY_KEY) {
+      throw new Error("Tavily API key is not configured.");
     }
 
     await ensureContactsSourceColumn(DB);
 
-    // [FINAL PROMPT v2] The most rigorous possible prompt without using the broken 'tools' feature.
-    const PROMPT = `
-You are a meticulous data researcher. Your task is to find up to two key decision-makers for the company "${firmName}" (${website}). Your primary objective is to provide VERIFIABLE and ACCURATE data by reasoning from your internal knowledge and providing proof.
-
-**CRITICAL INSTRUCTIONS:**
-1.  **Reasoning First:** Before providing an answer, think step-by-step. First, recall information about the company's leadership. Second, recall the standard URL patterns for LinkedIn profiles. Third, construct the most probable, real URL.
-2.  **No Invention:** You MUST NOT invent data. A fake or broken LinkedIn URL is a complete failure of the task. If you are not highly confident that a URL is correct based on your training data, you MUST return an empty string "".
-3.  **Proof of Work:** For each contact you provide, you must include a "reasoning" key that explains *why* you believe the information is correct (e.g., "This person is widely cited as the CEO in public sources, and this is the common URL format for LinkedIn profiles.").
-4.  **Final Output:** Your output MUST be ONLY the raw JSON array.
-
-**JSON OUTPUT FORMAT:**
-[
-  {
-    "contactName": "Full Name of the Person",
-    "designation": "Their Official Title",
-    "linkedIn": "The most probable, valid URL to their personal LinkedIn profile.",
-    "email": "",
-    "contactNumber": "",
-    "reasoning": "A brief explanation of why this information is believed to be accurate."
-  }
-]
-`;
-
-    const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=' + GEMINI_KEY;
+    // STEP 1: Use Gemini as the "Researcher" to get potential names and titles.
+    const PROMPT_NAMES = `Your task is to identify the names and titles of up to two key decision-makers (CEO, Founder, Partner) for the company "${firmName}" (${website}). Return ONLY a raw JSON array of objects with "contactName" and "designation" keys.`;
     
-    const geminiRes = await fetch(url, {
+    const geminiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=' + GEMINI_KEY;
+    const geminiRes = await fetch(geminiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: PROMPT }] }],
-        generationConfig: { responseMimeType: 'application/json', temperature: 0.0 }
-      })
+      body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: PROMPT_NAMES }] }], generationConfig: { responseMimeType: 'application/json' } })
     });
-
-    if (!geminiRes.ok) {
-      throw new Error(`Gemini API Error: ${geminiRes.statusText} (${geminiRes.status})`);
-    }
-
+    if (!geminiRes.ok) throw new Error(`Gemini API Error: ${geminiRes.statusText}`);
     const gJson = await geminiRes.json();
-    let txt = gJson?.candidates?.[0]?.content?.parts?.[0]?.text ?? '[]';
-    const newContactsFromAI = JSON.parse(txt);
+    const potentialContacts = JSON.parse(gJson.candidates[0].content.parts[0].text);
 
-    if (!Array.isArray(newContactsFromAI)) {
-        throw new Error("Gemini did not return a valid array of contacts.");
+    let enrichedContacts = [];
+
+    // STEP 2: Use a real Search API as the "Investigator" to verify and find URLs.
+    for (const contact of potentialContacts) {
+      if (!contact.contactName) continue;
+      
+      const searchQuery = `"${contact.contactName}" "${contact.designation}" "${firmName}" site:linkedin.com/in`;
+      const searchResult = await searchForContact(searchQuery, TAVILY_KEY);
+      
+      enrichedContacts.push({
+        contactName: contact.contactName,
+        designation: contact.designation,
+        email: "", // Email finding is a separate, complex task
+        // Use the REAL URL from the search result, or a blank string if none found.
+        linkedIn: searchResult ? searchResult.url : "", 
+        contactNumber: ""
+      });
     }
-    
-    const formattedContacts = newContactsFromAI.map(c => ({
-      contactName: c.contactName || "",
-      designation: c.designation || "",
-      email: c.email || "",
-      linkedIn: c.linkedIn || "",
-      contactNumber: c.contactNumber || ""
-    }));
-    
+
+    // STEP 3: Save the verified and enriched data.
     const firm = await DB.prepare("SELECT contacts_json FROM firms WHERE id = ?").bind(id).first();
     const existingContacts = JSON.parse(firm.contacts_json || '[]');
-    
-    const verifiedNewContacts = formattedContacts.filter(c => c.contactName && c.contactName !== "...");
+    const mergedContacts = [...existingContacts, ...enrichedContacts];
 
-    const mergedContacts = [...existingContacts, ...verifiedNewContacts];
-
-    await DB.prepare(
-      `UPDATE firms SET contacts_json = ?1, contacts_source = 'Gemini' WHERE id = ?2`
-    ).bind(JSON.stringify(mergedContacts), id).run();
+    await DB.prepare(`UPDATE firms SET contacts_json = ?1, contacts_source = 'Gemini' WHERE id = ?2`)
+      .bind(JSON.stringify(mergedContacts), id).run();
 
     return new Response(JSON.stringify({ contacts: mergedContacts }), { headers: { 'content-type': 'application/json' } });
 
