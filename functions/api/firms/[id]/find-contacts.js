@@ -23,8 +23,9 @@ async function searchForContact(query, apiKey) {
         api_key: apiKey,
         query: query,
         search_depth: "basic",
-        include_raw_content: true, // Get the webpage content
-        max_results: 1
+        include_raw_content: true,
+        max_results: 1,
+        include_domains: ["linkedin.com"]
       }),
     });
     if (!response.ok) return null;
@@ -76,7 +77,6 @@ export async function onRequestPost({ request, env, params }) {
 
     await ensureContactsSourceColumn(DB);
 
-    // Step 1: Use Gemini as the "Researcher" to get potential names and titles.
     const PROMPT_NAMES = `Your task is to identify the names and titles of up to two key decision-makers (e.g., CEO, Founder, Partner) for the company "${firmName}" (${website}). Return ONLY a raw JSON array of objects with "contactName" and "designation" keys.`;
     
     const geminiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=' + GEMINI_KEY;
@@ -94,8 +94,8 @@ export async function onRequestPost({ request, env, params }) {
     for (const contact of potentialContacts) {
       if (!contact.contactName) continue;
       
-      // Step 2: Use Tavily as the "Investigator" to find a real page and its content.
-      const searchQuery = `"${contact.contactName}" "${contact.designation}" "${firmName}" site:linkedin.com/in`;
+      // [THE FIX] Using a more effective and less restrictive search query.
+      const searchQuery = `"${contact.contactName}" "${firmName}" LinkedIn Profile`;
       const searchResult = await searchForContact(searchQuery, TAVILY_KEY);
       
       let finalDetails = { email: "", contactNumber: "" };
@@ -103,7 +103,6 @@ export async function onRequestPost({ request, env, params }) {
 
       if (searchResult && searchResult.raw_content) {
         finalUrl = searchResult.url;
-        // Step 3: Use Gemini as the "Extractor" to pull details from the verified text.
         finalDetails = await extractDetailsFromText(contact.contactName, searchResult.raw_content, GEMINI_KEY);
       }
       
