@@ -12,9 +12,9 @@ async function ensureContactsSourceColumn(DB) {
 }
 
 /**
- * Uses Tavily Search API to find a verified URL and page content.
+ * Performs a detailed search using Tavily to get context.
  */
-async function searchForContact(query, apiKey) {
+async function getContextFromSearch(query, apiKey) {
   try {
     const response = await fetch('https://api.tavily.com/search', {
       method: 'POST',
@@ -22,49 +22,19 @@ async function searchForContact(query, apiKey) {
       body: JSON.stringify({
         api_key: apiKey,
         query: query,
-        search_depth: "basic",
-        include_raw_content: true, // We need the content to extract from
-        max_results: 1
+        search_depth: "advanced", // Use advanced search for better context
+        max_results: 5,
       }),
     });
-    if (!response.ok) return null;
+    if (!response.ok) return "No search results found.";
     const data = await response.json();
-    return data.results && data.results.length > 0 ? data.results[0] : null;
+    // Combine the content of all search results into a single context block
+    return data.results.map(res => `Source URL: ${res.url}\nContent: ${res.content}`).join('\n\n---\n\n');
   } catch (e) {
     console.error("Tavily search failed:", e);
-    return null;
+    return `Search failed: ${e.message}`;
   }
 }
-
-/**
- * Uses Gemini to extract details from verified text.
- */
-async function extractDetailsFromText(contactName, pageContent, geminiKey) {
-  try {
-    const PROMPT_EXTRACT = `From the following text, extract the email address and phone number for "${contactName}". Respond ONLY with a single raw JSON object: {"email": "...", "contactNumber": "..."}. If a value is not found in the text, use an empty string.
-
-Text: """
-${pageContent}
-"""`;
-    
-    const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=' + geminiKey;
-    const res = await fetch(url, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-            contents: [{ role: 'user', parts: [{ text: PROMPT_EXTRACT }] }],
-            generationConfig: { responseMimeType: 'application/json', temperature: 0.0 }
-        })
-    });
-    if (!res.ok) return { email: "", contactNumber: "" };
-    const gJson = await res.json();
-    return JSON.parse(gJson.candidates[0].content.parts[0].text);
-  } catch(e) {
-    console.error("Gemini extraction failed:", e);
-    return { email: "", contactNumber: "" };
-  }
-}
-
 
 export async function onRequestPost({ request, env, params }) {
   try {
@@ -72,53 +42,57 @@ export async function onRequestPost({ request, env, params }) {
     const { id } = params;
     const { firmName, website } = await request.json();
 
-    if (!TAVILY_KEY) throw new Error("Tavily API key is not configured.");
+    if (!TAVILY_KEY) {
+      throw new Error("Tavily API key is not configured.");
+    }
 
     await ensureContactsSourceColumn(DB);
 
-    // Step 1: Use Gemini as the "Researcher" to get potential names and titles.
-    const PROMPT_NAMES = `Your task is to identify the names and titles of up to two key decision-makers (e.g., CEO, Founder, Partner) for the company "${firmName}" (${website}). Return ONLY a raw JSON array of objects with "contactName" and "designation" keys.`;
+    // Step 1: Use the "Investigator" (Tavily) to get raw context from the live internet.
+    const searchQuery = `Who are the key people, founders, CEO, or partners at "${firmName}"?`;
+    const searchContext = await getContextFromSearch(searchQuery, TAVILY_KEY);
+
+    // Step 2: Use the "Extractor" (Gemini) to process the real data.
+    const PROMPT_EXTRACT = `
+You are a data extraction specialist. Based *only* on the provided search results below, identify up to two key decision-makers for "${firmName}".
+
+**CRITICAL INSTRUCTIONS:**
+1.  Extract the Person's Name, Designation, a direct LinkedIn Profile URL, an Email, and a Phone Number.
+2.  Your answer **MUST** come from the provided text. Do not use your own knowledge or invent information.
+3.  The LinkedIn URL must be a full, valid URL found in the text.
+4.  If a specific detail (like email or phone) is not present in the text for a person, you **MUST** use an empty string "".
+
+**SEARCH RESULTS CONTEXT:**
+"""
+${searchContext}
+"""
+
+**JSON OUTPUT:**
+Return ONLY a raw JSON array with the extracted contacts.
+`;
     
     const geminiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=' + GEMINI_KEY;
     const geminiRes = await fetch(geminiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: PROMPT_NAMES }] }], generationConfig: { responseMimeType: 'application/json' } })
+      body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: PROMPT_EXTRACT }] }], generationConfig: { responseMimeType: 'application/json', temperature: 0.0 } })
     });
-    if (!geminiRes.ok) throw new Error(`Gemini API Error: ${geminiRes.statusText}`);
+
+    if (!geminiRes.ok) { throw new Error(`Gemini API Error: ${geminiRes.statusText}`); }
+
     const gJson = await geminiRes.json();
-    const potentialContacts = JSON.parse(gJson.candidates[0].content.parts[0].text);
+    const newContacts = JSON.parse(gJson.candidates[0].content.parts[0].text);
 
-    let enrichedContacts = [];
-
-    for (const contact of potentialContacts) {
-      if (!contact.contactName) continue;
-      
-      // Step 2: Use Tavily as the "Investigator" to find a real page and its content.
-      const searchQuery = `"${contact.contactName}" "${contact.designation}" "${firmName}" LinkedIn`;
-      const searchResult = await searchForContact(searchQuery, TAVILY_KEY);
-      
-      let finalDetails = { email: "", contactNumber: "" };
-      let finalUrl = "";
-
-      if (searchResult && searchResult.raw_content) {
-        finalUrl = searchResult.url;
-        // Step 3: Use Gemini as the "Extractor" to pull details from the verified text.
-        finalDetails = await extractDetailsFromText(contact.contactName, searchResult.raw_content, GEMINI_KEY);
-      }
-      
-      enrichedContacts.push({
-        contactName: contact.contactName,
-        designation: contact.designation,
-        email: finalDetails.email || "",
-        linkedIn: finalUrl,
-        contactNumber: finalDetails.contactNumber || ""
-      });
+    if (!Array.isArray(newContacts)) {
+        throw new Error("Gemini did not return a valid array of contacts.");
     }
+    
+    // Filter out any empty results before saving
+    const verifiedNewContacts = newContacts.filter(c => c.contactName && c.contactName !== "...");
 
     const firm = await DB.prepare("SELECT contacts_json FROM firms WHERE id = ?").bind(id).first();
     const existingContacts = JSON.parse(firm.contacts_json || '[]');
-    const mergedContacts = [...existingContacts, ...enrichedContacts];
+    const mergedContacts = [...existingContacts, ...verifiedNewContacts];
 
     await DB.prepare(`UPDATE firms SET contacts_json = ?1, contacts_source = 'Gemini' WHERE id = ?2`)
       .bind(JSON.stringify(mergedContacts), id).run();
