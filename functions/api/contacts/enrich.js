@@ -1,114 +1,158 @@
-/**
- * Cloudflare Worker – Contact Enrichment (search-assisted)
- * - Uses Google Programmable Search JSON API to fetch snippets
- * - Feeds snippets to Gemini for reasoning
- * - Post-validates to avoid duplicate or bogus outputs
- */
+// worker/enrich.js  –  Cloudflare module worker
+export default {
+  /**
+   * Single route: POST /enrich
+   */
+  async fetch(request, env, ctx) {
+    try {
+      if (request.method !== 'POST') {
+        return new Response('Method Not Allowed', { status: 405 });
+      }
 
-export async function onRequestPost({ request, env }) {
-  try {
-    const { DB, GEMINI_KEY, GOOGLE_CSE_ID, GOOGLE_API_KEY } = env;
-    const { firmId, firmName, firmWebsite, contactIndex, contact } = await request.json();
+      // ---------------- Environment bindings ----------------
+      // Bind these four in your dashboard or wrangler.toml:
+      //  DB              = D1 Database binding
+      //  GEMINI_KEY      = Gemini API key
+      //  GOOGLE_CSE_ID   = Programmable Search Engine CX
+      //  GOOGLE_API_KEY  = Google API key
+      const { DB, GEMINI_KEY, GOOGLE_CSE_ID, GOOGLE_API_KEY } = env;
 
-    if (!firmId || !contact?.contactName) {
-      return new Response(JSON.stringify({ error: 'Missing required data.' }), { status: 400 });
-    }
+      // --------------- Parse body ----------------
+      const {
+        firmId,
+        firmName,
+        firmWebsite,
+        contactIndex,
+        contact
+      } = await request.json();
 
-    const firmDomain = new URL(
-      firmWebsite.startsWith('http') ? firmWebsite : `https://${firmWebsite}`
-    ).hostname.replace('www.', '');
+      if (!firmId || !contact || !contact.contactName) {
+        return new Response(
+          JSON.stringify({ error: 'Missing required data.' }),
+          { status: 400, headers: { 'content-type': 'application/json' } }
+        );
+      }
 
-    /* ------------------------------------------------------------ *
-     * 1. Google CSE – get top snippets that mention the person
-     * ------------------------------------------------------------ */
-    const q = encodeURIComponent(
-      `"${contact.contactName}" "${firmName}" site:linkedin.com OR ${firmDomain}`
-    );
-    const googleURL = `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_API_KEY}` +
-                      `&cx=${GOOGLE_CSE_ID}&num=5&q=${q}`;
-    const googleRes = await fetch(googleURL);
-    const googleJson = googleRes.ok ? await googleRes.json() : { items: [] };
-    const snippets = (googleJson.items || []).map(i => `${i.title} – ${i.link}`);
+      const firmDomain = new URL(
+        firmWebsite.startsWith('http') ? firmWebsite : `https://${firmWebsite}`
+      ).hostname.replace('www.', '');
 
-    /* ------------------------------------------------------------ *
-     * 2. Gemini prompt – includes evidence snippets
-     * ------------------------------------------------------------ */
-    const PROMPT_ENRICH = `
+      /* =====================================================
+       * 1. GOOGLE PROGRAMMABLE SEARCH → snippets
+       * ===================================================== */
+      let snippets = [];
+      try {
+        const q = `"${contact.contactName}" "${firmName}" site:linkedin.com OR ${firmDomain}`;
+        const googleURL =
+          `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_API_KEY}` +
+          `&cx=${GOOGLE_CSE_ID}&num=5&q=${encodeURIComponent(q)}`;
+
+        const googleRes = await fetch(googleURL);
+        if (googleRes.ok) {
+          const googleJson = await googleRes.json();
+          snippets =
+            (googleJson.items || []).map((i) => `${i.title} – ${i.link}`) || [];
+        }
+      } catch (e) {
+        // If Google call fails (e.g. bad key), keep snippets empty – Gemini will just be conservative
+        console.warn('Google CSE error:', e);
+      }
+
+      /* =====================================================
+       * 2. GEMINI REQUEST
+       * ===================================================== */
+      const PROMPT_ENRICH = `
 You are an expert contact-data researcher.
 
 EVIDENCE
 ${snippets.join('\n')}
 
 TASK
-Return a minified JSON: {"email":"","linkedIn":"","contactNumber":""}
+Return JSON: {"email":"","linkedIn":"","contactNumber":""}
 
 RULES
-• LinkedIn: choose only if evidence shows the profile belongs to "${contact.contactName}" and lists "${firmName}" as current employer. URL must start https://www.linkedin.com/in/.
-• Email: must end "@${firmDomain}". Supply it only if explicitly present in EVIDENCE; never guess.
-• contactNumber: only if clearly tied to the person in EVIDENCE.
-• If uncertain, leave field "".
-• No commentary – output exactly one JSON object on one line.
+• LinkedIn must be https://www.linkedin.com/in/…, match "${contact.contactName}" and show "${firmName}" as current employer. Else "".
+• Email must end "@${firmDomain}" and appear in EVIDENCE. Else "".
+• Phone only if clearly tied to person. Else "".
+• Output exactly one minified JSON object.
 `.trim();
 
-    const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=${GEMINI_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ role: 'user', parts: [{ text: PROMPT_ENRICH }] }],
-          generationConfig: { responseMimeType: 'application/json', temperature: 0, maxOutputTokens: 256 }
-        })
+      const geminiRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=${GEMINI_KEY}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: PROMPT_ENRICH }] }],
+            generationConfig: {
+              responseMimeType: 'application/json',
+              temperature: 0,
+              maxOutputTokens: 256
+            }
+          })
+        }
+      );
+
+      if (!geminiRes.ok) {
+        throw new Error(`Gemini error: ${geminiRes.statusText}`);
       }
-    );
-    if (!geminiRes.ok) throw new Error(`Gemini error ${geminiRes.statusText}`);
-    const enriched = JSON.parse((await geminiRes.json()).candidates[0].content.parts[0].text);
+      const gRaw = await geminiRes.json();
+      const enriched = JSON.parse(
+        gRaw.candidates[0].content.parts[0].text || '{}'
+      );
 
-    /* ------------------------------------------------------------ *
-     * 3. Post-validation
-     * ------------------------------------------------------------ */
-    const slugOK = (url, fullName) => {
-      try {
-        const u = new URL(url.trim());
-        if (u.hostname !== 'www.linkedin.com' || !u.pathname.startsWith('/in/')) return false;
-        const slug = u.pathname.slice(4).toLowerCase();
-        return fullName
-          .toLowerCase()
-          .split(/\s+/)
-          .some(t => t.length > 2 && slug.includes(t));
-      } catch { return false; }
-    };
+      /* =====================================================
+       * 3. POST-VALIDATION & DEDUP
+       * ===================================================== */
+      const slugOK = (url, fullName) => {
+        try {
+          const u = new URL(url);
+          if (u.hostname !== 'www.linkedin.com' || !u.pathname.startsWith('/in/')) return false;
+          const slug = u.pathname.slice(4).toLowerCase();
+          return fullName.toLowerCase().split(/\s+/).some((t) => t.length > 2 && slug.includes(t));
+        } catch { return false; }
+      };
 
-    // fetch current contacts to detect duplicates
-    const firmRow = await DB.prepare('SELECT contacts_json FROM firms WHERE id = ?')
-                            .bind(firmId).first();
-    const contacts = JSON.parse(firmRow?.contacts_json || '[]');
+      // fetch existing contacts
+      const firmRow = await DB.prepare('SELECT contacts_json FROM firms WHERE id = ?')
+                              .bind(firmId).first();
+      const contacts = JSON.parse(firmRow?.contacts_json || '[]');
 
-    const emailsInUse = new Set(contacts.map(c => (c?.email || '').toLowerCase()));
-    const linkedInInUse = new Set(contacts.map(c => (c?.linkedIn || '').toLowerCase()));
+      // duplicate guards
+      const emailSet = new Set(contacts.map((c) => (c.email || '').toLowerCase()));
+      const liSet = new Set(contacts.map((c) => (c.linkedIn || '').toLowerCase()));
 
-    if (!enriched.email || emailsInUse.has(enriched.email.toLowerCase()))
-      enriched.email = '';
+      if (!enriched.email || emailSet.has(enriched.email.toLowerCase()))
+        enriched.email = '';
+      if (
+        !enriched.linkedIn ||
+        !slugOK(enriched.linkedIn, contact.contactName) ||
+        liSet.has(enriched.linkedIn.toLowerCase())
+      )
+        enriched.linkedIn = '';
 
-    if (!enriched.linkedIn || !slugOK(enriched.linkedIn, contact.contactName) ||
-        linkedInInUse.has(enriched.linkedIn.toLowerCase()))
-      enriched.linkedIn = '';
+      /* =====================================================
+       * 4. SAVE BACK
+       * ===================================================== */
+      if (contacts[contactIndex]) {
+        contacts[contactIndex].email = enriched.email || '';
+        contacts[contactIndex].linkedIn = enriched.linkedIn || '';
+        contacts[contactIndex].contactNumber = enriched.contactNumber || '';
+      }
 
-    /* ------------------------------------------------------------ *
-     * 4. Save back to DB
-     * ------------------------------------------------------------ */
-    if (contacts[contactIndex]) {
-      contacts[contactIndex].email         = enriched.email         || '';
-      contacts[contactIndex].linkedIn      = enriched.linkedIn      || '';
-      contacts[contactIndex].contactNumber = enriched.contactNumber || '';
+      await DB.prepare('UPDATE firms SET contacts_json = ?1 WHERE id = ?2')
+               .bind(JSON.stringify(contacts), firmId)
+               .run();
+
+      return new Response(JSON.stringify({ contacts }), {
+        headers: { 'content-type': 'application/json' }
+      });
+    } catch (err) {
+      console.error('Worker Error:', err);
+      return new Response(
+        JSON.stringify({ error: err.message || String(err) }),
+        { status: 500, headers: { 'content-type': 'application/json' } }
+      );
     }
-
-    await DB.prepare('UPDATE firms SET contacts_json = ?1 WHERE id = ?2')
-             .bind(JSON.stringify(contacts), firmId).run();
-
-    return new Response(JSON.stringify({ contacts }), {
-      headers: { 'content-type': 'application/json' }
-    });
-  } catch (err) {
-    console.error('Enrich Contact Error:', err);
-    return new Resp
+  }
+};
