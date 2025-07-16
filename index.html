@@ -52,7 +52,6 @@ tr:hover td{background:var(--white)}
 .icon .count{font-size:12px;background:var(--grey-text);color:white;padding:1px 5px;border-radius:10px}
 .icon.del{color:#b60000}
 .icon.del:hover{color:#8c0000}
-.btn-enrich{padding:2px 8px;font-size:11px;border-radius:4px;background:var(--gold);color:white;cursor:pointer;border:none;}.btn-enrich:hover{background:#a18b4c}
 #overlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(255,255,255,.6);z-index:300;backdrop-filter:blur(4px)}
 .spinner{width:44px;height:44px;border:5px solid rgba(0,0,0,.12);border-top-color:var(--blue-dark);border-radius:50%;animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:500;opacity:0;pointer-events:none;transition:opacity .3s ease}
@@ -135,8 +134,8 @@ tr:hover td{background:var(--white)}
         </table>
     </div>
     <div class="modal-footer">
-        <p id="ct-disclaimer" style="display: none;">Contacts sourced by AI. Please verify accuracy.</p>
-        <button id="ct-find-btn" class="btn btn-pri" style="width: 200px;">✨ Find Key Contacts</button>
+        <p id="ct-disclaimer" style="display: none;">AI-generated data. Please verify accuracy.</p>
+        <button id="ct-find-btn" class="btn btn-pri" style="width: 220px;">✨ Discover Potential Contacts</button>
     </div>
 </div></div>
 
@@ -203,13 +202,15 @@ function renderContactsModal(row) {
     UI.ctTitle.textContent = `Contacts – ${row?.firmName || ''}`;
     UI.ctModal.dataset.firmId = row._id;
     UI.ctModal.dataset.firmName = row.firmName;
-    
+    UI.ctModal.dataset.firmWebsite = row.website;
+
     if (row?.contacts?.length > 0) {
         UI.ctBody.innerHTML = row.contacts.map((c, index) => {
             const hasDetails = c.linkedIn || c.email || c.contactNumber;
             const linkedInHtml = c.linkedIn ? `<a href="${c.linkedIn.startsWith('http')?c.linkedIn:`https://${c.linkedIn}`}" target="_blank">View Profile</a>` : 'N/A';
             const emailHtml = c.email ? `<a href="mailto:${c.email}">${c.email}</a>` : 'N/A';
             
+            // Show "Enrich" button only if details are missing
             const actionCellHtml = hasDetails 
                 ? linkedInHtml 
                 : `<button class="btn-enrich" data-contact-index="${index}">Enrich Contact ✨</button>`;
@@ -294,7 +295,7 @@ function renderPagination(totalRows) {
 
 UI.filterBtns.forEach(b=>b.addEventListener('click',()=>{ UI.filterBtns.forEach(x=>x.classList.remove('active'));b.classList.add('active');view=b.dataset.f;activeSubTypes.clear();currentPage=1;renderSubTypeFilters();render();}));
 [UI.qCountry,UI.qSector,UI.qStage,UI.qSource,UI.search,UI.rowsPerPageSelect].forEach(el=>el.addEventListener('input',()=>{currentPage=1;render();}));
-$('#q-clear').addEventListener('click',()=>{UI.qCountry.value=UI.Sectora.value=UI.qStage.value=UI.qSource.value=UI.search.value='';currentPage=1;activeSubTypes.clear();renderSubTypeFilters();render();});
+$('#q-clear').addEventListener('click',()=>{UI.qCountry.value=UI.qSector.value=UI.qStage.value=UI.qSource.value=UI.search.value='';currentPage=1;activeSubTypes.clear();renderSubTypeFilters();render();});
 UI.subtypeTagsContainer.addEventListener('click', e => { if(e.target.classList.contains('subtype-tag')) { const subtype = e.target.dataset.subtype; if(activeSubTypes.has(subtype)) { activeSubTypes.delete(subtype); } else { activeSubTypes.add(subtype); } currentPage = 1; renderSubTypeFilters(); render(); } });
 UI.colBtn.addEventListener('click',()=>{ UI.colList.innerHTML='';COLS.forEach(c=>{if(c.key==='actions'||c.key==='chk')return;const li=document.createElement('li');li.textContent=c.label;li.dataset.k=c.key;li.classList.toggle('selected',vis.has(c.key));UI.colList.appendChild(li);}); UI.colModal.classList.add('active');});
 UI.colModal.addEventListener('click',e=>{if(e.target.closest('.close')||e.target===UI.colModal)UI.colModal.classList.remove('active');});
@@ -307,7 +308,7 @@ UI.tbody.addEventListener('click',async e=>{
     if(act==='ct'){ const row=firms.find(x=>x._id==id); renderContactsModal(row); return; }
     if(act==='del'){ if(!confirm('Are you sure you want to delete this firm?'))return; showO(true); try{const res=await fetch(`/api/firms/${id}`,{method:'DELETE'}); if(!res.ok) throw new Error('Failed to delete'); firms=firms.filter(x=>x._id!=id);render();toast('Deleted successfully',true);} catch(e){ toast(e.message, false); } finally{ showO(false); }}
 });
-UI.ctModal.addEventListener('click',e=>{if(e.target.closest('.close')||e.target===UI.ctModal)UI.ctModal.classList.remove('active');});
+UI.ctModal.addEventListener('click',e=>{if(e.target.closest('.close-btn-wrap')||e.target===UI.ctModal)UI.ctModal.classList.remove('active');});
 UI.ctFindBtn.addEventListener('click', async () => {
     const firmId = UI.ctModal.dataset.firmId;
     if (!firmId) return;
@@ -325,19 +326,19 @@ UI.ctFindBtn.addEventListener('click', async () => {
         if (!res.ok) throw new Error(data.error || 'Failed to find contacts.');
         row.contacts = data.contacts;
         row.contacts_source = 'Gemini';
-        toast('New contacts discovered!', true);
-        render(); // Update main table count
-        renderContactsModal(row); // Re-open modal with new placeholder contacts
+        toast('New potential contacts added!', true);
+        render();
+        renderContactsModal(row);
     } catch(e) { toast(e.message, false); showO(false); }
     finally { showO(false); }
 });
-
-// MODIFIED: Event listener is now on the modal body for delegation
 UI.ctBody.addEventListener('click', async (e) => {
     const btn = e.target.closest('.btn-enrich');
     if (!btn) return;
 
     const firmId = UI.ctModal.dataset.firmId;
+    const firmName = UI.ctModal.dataset.firmName;
+    const firmWebsite = UI.ctModal.dataset.firmWebsite;
     const contactIndex = parseInt(btn.dataset.contactIndex, 10);
     const firm = firms.find(f => f._id == firmId);
     if (!firm || !firm.contacts[contactIndex]) return;
@@ -352,8 +353,8 @@ UI.ctBody.addEventListener('click', async (e) => {
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({
                 firmId: firmId,
-                firmName: firm.firmName,
-                firmWebsite: firm.website, // Pass website for better searching
+                firmName: firmName,
+                firmWebsite: firmWebsite,
                 contactIndex: contactIndex,
                 contact: contact,
             })
@@ -361,19 +362,15 @@ UI.ctBody.addEventListener('click', async (e) => {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to enrich contact.');
 
-        // Update local firms array with the full, updated contacts list from the server
         firm.contacts = data.contacts;
-
         toast('Contact enriched!', true);
         renderContactsModal(firm);
-
     } catch (err) {
         toast(err.message, false);
         btn.textContent = 'Enrich Contact ✨';
         btn.disabled = false;
     }
 });
-
 UI.delBulk.addEventListener('click',async()=>{ const ids=[...UI.tbody.querySelectorAll('.rowchk:checked')].map(cb=>cb.dataset.id); if(!ids.length){toast('Nothing selected',false);return;} if(!confirm(`Delete ${ids.length} selected firms?`))return; showO(true); try{ await Promise.all(ids.map(id=>fetch(`/api/firms/${id}`,{method:'DELETE'}))); firms=firms.filter(x=>!ids.includes(String(x._id)));render();toast(`Deleted ${ids.length} firms.`,true); } catch(e){ toast('Bulk delete failed.', false); } finally{ showO(false); }});
 UI.aiBtn.addEventListener('click',async()=>{ const payload={entityType:UI.aiType.value.trim(),subType:UI.aiSub.value.trim(),sector:UI.aiSec.value.trim(),geo:UI.aiGeo.value.trim()}; if(!payload.geo) { toast('Geography is a required field.', false); return; } showO(true); try{ const res=await fetch('/api/find-investors',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)}); const d=await res.json();if(!res.ok)throw new Error(d.error||res.statusText); if (d.newFirms && d.newFirms.length > 0) { d.newFirms.forEach(f => f.isNew = true); firms.unshift(...d.newFirms.map(mapRow)); currentPage = 1; buildFilters();render(); toast(`${d.newFirms.length} new firms added.`,true); } else { toast('No new firms found.', true); } }catch(e){toast(e.message||'Gemini error',false);}finally{showO(false);}});
 UI.fileIn.addEventListener('change', e => { const f = e.target.files[0]; if (!f) return; showO(true); const rd = new FileReader(); rd.onload = async ev => { try { const wb = XLSX.read(new Uint8Array(ev.target.result), { type:'array', cellDates:true }); const raw = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval:'' }); const groupedFirms = new Map(); raw.forEach(r => { const firmData = {}; const contactData = {}; for (const [k, v] of Object.entries(r)) { const key = alias[k.toLowerCase().trim()] || k.replace(/\s+/g, ''); if (v) (contactKeys.has(key) ? contactData : firmData)[key] = v; } const uniqueKey = (firmData.website || firmData.firmName || '').toLowerCase().trim(); if (!uniqueKey) return; if (!groupedFirms.has(uniqueKey)) { groupedFirms.set(uniqueKey, { ...firmData, contacts: [] }); } const record = groupedFirms.get(uniqueKey); Object.keys(firmData).forEach(k => { if (!record[k]) record[k] = firmData[k]; }); if (Object.values(contactData).some(Boolean)) record.contacts.push(contactData); }); const payload = [...groupedFirms.values()]; if (!payload.length) throw new Error("No valid data to import."); const res = await fetch('/api/firms', { method : 'POST', headers: { 'content-type':'application/json' }, body : JSON.stringify(payload) }); const { inserted = [], error } = await res.json(); if (error) throw new Error(error); if (inserted.length > 0) { inserted.forEach(f => f.isNew = true); firms.unshift(...inserted.map(mapRow)); currentPage = 1; buildFilters(); render(); } toast(`${inserted.length} firms added or updated.`, true); } catch (err) { console.error(err); toast(err.message || 'Upload failed', false); } finally { showO(false); e.target.value = ''; } }; rd.readAsArrayBuffer(f); });
