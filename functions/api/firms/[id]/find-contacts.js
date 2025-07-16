@@ -11,104 +11,93 @@ async function ensureContactsSourceColumn(DB) {
   }
 }
 
-// A generic helper to call the Gemini API
-async function callGemini(prompt, geminiKey, temperature = 0.1) {
-    const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=' + geminiKey;
-    const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            contents: [{ role: 'user', parts: [{ text: prompt }] }],
-            generationConfig: { responseMimeType: 'application/json', temperature: temperature }
-        })
-    });
-    if (!response.ok) throw new Error(`Gemini API Error: ${response.status} ${response.statusText}`);
-    const gJson = await response.json();
-    return JSON.parse(gJson.candidates[0].content.parts[0].text);
-}
-
-// A generic helper to call the Tavily Search API
-async function tavilySearch(query, apiKey) {
-    try {
-        const response = await fetch('https://api.tavily.com/search', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ api_key: apiKey, query: query, search_depth: 'advanced', max_results: 3 }),
-        });
-        if (!response.ok) return [];
-        const data = await response.json();
-        return data.results || [];
-    } catch (e) {
-        console.error("Tavily search failed:", e);
-        return [];
-    }
-}
-
-
 export async function onRequestPost({ request, env, params }) {
   try {
-    const { DB, GEMINI_KEY, TAVILY_KEY } = env;
+    const { DB, GEMINI_KEY } = env;
     const { id } = params;
     const { firmName, website } = await request.json();
 
-    if (!TAVILY_KEY) throw new Error("Tavily API key is not configured.");
+    if (!id || !firmName) {
+      return new Response(JSON.stringify({ error: 'Firm ID and Name are required' }), { status: 400 });
+    }
+
     await ensureContactsSourceColumn(DB);
 
-    // STEP 1: Use the "Search Strategist" AI to generate smart search queries.
-    const PROMPT_QUERIES = `You are a research analyst. Generate a JSON array of 3 diverse and effective Google search queries to find the key executives, partners, or board members for the company "${firmName}".
-    Example output: ["'${firmName}' leadership team", "'${firmName}' board of directors", "site:linkedin.com '${firmName}' CEO OR Founder"]`;
-    const searchQueries = await callGemini(PROMPT_QUERIES, GEMINI_KEY, 0.5);
+    // --- The Final Prompt, designed for Google Search Grounding ---
+    const PROMPT = `
+You are a data researcher with live access to Google Search.
+Your task is to find up to two key decision-makers (e.g., CEO, Founder, Partner) for the company "${firmName}" (${website}).
 
-    // STEP 2: Use the "Investigator" (Tavily) to execute all queries and gather research.
-    let searchContext = "";
-    for (const query of searchQueries) {
-        const results = await tavilySearch(query, TAVILY_KEY);
-        if (results.length > 0) {
-            searchContext += `Results for query "${query}":\n` + results.map(r => `URL: ${r.url}\nContent: ${r.content}`).join('\n---\n');
-            searchContext += '\n\n';
-        }
-    }
+**Instructions:**
+1.  Use your Google Search tool to find and verify all information.
+2.  Your primary goal is to find real, working, and accurate LinkedIn profile URLs for each contact.
+3.  If you find a public email or contact number from a reliable source, include it. Otherwise, use an empty string "".
+4.  Your final output must be a raw JSON array. Do not invent data.
 
-    if (searchContext.trim() === "") {
-        throw new Error("Failed to find any information online for this company.");
-    }
-    
-    // STEP 3: Use the "Data Extractor" AI to analyze the research and pull out contacts.
-    const PROMPT_EXTRACT = `
-Based *only* on the provided search results context below, identify up to two of the most senior key decision-makers for "${firmName}".
-
-**CRITICAL INSTRUCTIONS:**
-1.  Extract the Person's Name, Designation, and a direct, personal LinkedIn Profile URL.
-2.  Your answer **MUST** come from the provided text. Do not use your own knowledge.
-3.  The LinkedIn URL must be a full, valid URL containing "/in/". If no valid profile URL is found in the text, you **MUST** use an empty string "".
-4.  Do not invent any data.
-
-**SEARCH RESULTS CONTEXT:**
-"""
-${searchContext}
-"""
-
-**JSON OUTPUT (Return ONLY the raw JSON array):**
+**JSON Output Structure:**
 [
-    {
-      "contactName": "...",
-      "designation": "...",
-      "linkedIn": "...",
-      "email": "",
-      "contactNumber": ""
-    }
+  {
+    "contactName": "Full Name",
+    "designation": "Official Title",
+    "email": "",
+    "linkedIn": "A real and verified LinkedIn URL",
+    "contactNumber": ""
+  }
 ]
 `;
-    const newContacts = await callGemini(PROMPT_EXTRACT, GEMINI_KEY, 0.0);
 
-    // Final step: Update the database with the verified contacts.
-    const verifiedNewContacts = newContacts.filter(c => c.contactName && c.contactName !== "...");
+    // --- The Correct Vertex AI Endpoint with your Project ID ---
+    const PROJECT_ID = "gen-lang-client-0134744668";
+    const REGION = "us-central1";
+    
+    // The final, correct URL structure with the API key in the query string.
+    const url = `https://${REGION}-aiplatform.googleapis.com/v1/projects/${PROJECT_ID}/locations/${REGION}/publishers/google/models/gemini-1.5-pro-latest:generateContent?key=${GEMINI_KEY}`;
+    
+    const geminiRes = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: PROMPT }] }],
+        tools: [{
+          "Google Search_retrieval": {}
+        }],
+        generationConfig: { temperature: 0.1 }
+      })
+    });
+
+    if (!geminiRes.ok) {
+      const errorBody = await geminiRes.text();
+      console.error("Gemini API Error Response:", errorBody);
+      throw new Error(`Gemini API Error: ${geminiRes.statusText} (${geminiRes.status})`);
+    }
+
+    const gJson = await geminiRes.json();
+    
+    const textPart = gJson.candidates[0].content.parts.find(part => 'text' in part);
+    let txt = textPart ? textPart.text.trim() : '[]';
+    
+    if (txt.startsWith("```json")) {
+        txt = txt.substring(7, txt.length - 3).trim();
+    }
+    
+    const newContacts = JSON.parse(txt);
+
+    if (!Array.isArray(newContacts)) {
+        throw new Error("Gemini did not return a valid array of contacts.");
+    }
+    
     const firm = await DB.prepare("SELECT contacts_json FROM firms WHERE id = ?").bind(id).first();
     const existingContacts = JSON.parse(firm.contacts_json || '[]');
+    
+    const verifiedNewContacts = newContacts.filter(c => c.contactName && c.contactName !== "...");
+
     const mergedContacts = [...existingContacts, ...verifiedNewContacts];
 
-    await DB.prepare(`UPDATE firms SET contacts_json = ?1, contacts_source = 'Gemini' WHERE id = ?2`)
-      .bind(JSON.stringify(mergedContacts), id).run();
+    await DB.prepare(
+      `UPDATE firms SET contacts_json = ?1, contacts_source = 'Gemini' WHERE id = ?2`
+    ).bind(JSON.stringify(mergedContacts), id).run();
 
     return new Response(JSON.stringify({ contacts: mergedContacts }), { headers: { 'content-type': 'application/json' } });
 
