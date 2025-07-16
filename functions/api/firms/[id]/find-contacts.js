@@ -11,94 +11,91 @@ async function ensureContactsSourceColumn(DB) {
   }
 }
 
-export async function onRequestPost({ request, env, params }) {
+/**
+ * The "Investigator": Scrapes the content of a URL using Firecrawl.
+ */
+async function getPageContent(urlToScrape, apiKey) {
   try {
-    const { DB, GEMINI_KEY } = env;
-    const { id } = params;
-    const { firmName, website } = await request.json();
-
-    if (!id || !firmName) {
-      return new Response(JSON.stringify({ error: 'Firm ID and Name are required' }), { status: 400 });
-    }
-
-    await ensureContactsSourceColumn(DB);
-
-    const PROMPT = `
-You are a data researcher with live access to Google Search.
-Your task is to find up to two key decision-makers (e.g., CEO, Founder, Partner) for the company "${firmName}" (${website}).
-
-**Instructions:**
-1.  Use your Google Search tool to find and verify all information.
-2.  Your primary goal is to find real, working, and accurate LinkedIn profile URLs for each contact.
-3.  If you find a public email or contact number from a reliable source, include it. Otherwise, use an empty string "".
-4.  Your final output must be a raw JSON array. Do not invent data.
-
-**JSON Output Structure:**
-[
-  {
-    "contactName": "Full Name",
-    "designation": "Official Title",
-    "email": "",
-    "linkedIn": "A real and verified LinkedIn URL",
-    "contactNumber": ""
-  }
-]
-`;
-
-    // The Vertex AI Endpoint
-    const PROJECT_ID = "gen-lang-client-0134744668";
-    const REGION = "us-central1";
-    
-    // [THE FIX - Part 1] The URL no longer contains the API key.
-    const url = `https://${REGION}-aiplatform.googleapis.com/v1/projects/${PROJECT_ID}/locations/${REGION}/publishers/google/models/gemini-1.5-pro-latest:generateContent`;
-    
-    const geminiRes = await fetch(url, {
+    const response = await fetch('https://api.firecrawl.dev/v0/scrape', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        // [THE FIX - Part 2] The API key is sent in the correct, secure header.
-        'Authorization': `Bearer ${GEMINI_KEY}`
+        'Authorization': `Bearer ${apiKey}` // Firecrawl uses a Bearer token
       },
       body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: PROMPT }] }],
-        tools: [{
-          "Google Search_retrieval": {}
-        }],
-        generationConfig: { temperature: 0.1 }
-      })
+        url: urlToScrape
+      }),
     });
+    if (!response.ok) return null;
+    const data = await response.json();
+    // We return the clean markdown content, which is perfect for Gemini
+    return data.data.markdown;
+  } catch (e) {
+    console.error(`Firecrawl failed for URL ${urlToScrape}:`, e);
+    return null;
+  }
+}
 
-    if (!geminiRes.ok) {
-      const errorBody = await geminiRes.text();
-      console.error("Gemini API Error Response:", errorBody);
-      throw new Error(`Gemini API Error: ${geminiRes.statusText} (${geminiRes.status})`);
+/**
+ * The "Scout": Uses Gemini to find POTENTIAL leads.
+ */
+async function getPotentialContacts(firmName, website, geminiKey) {
+    const PROMPT_NAMES = `Your task is to identify the names and titles of up to two key decision-makers (e.g., CEO, Founder, Partner) for the company "${firmName}" (${website}). Return ONLY a raw JSON array of objects with "contactName", "designation", and a "linkedInUrl" which is your best guess for their LinkedIn profile.`;
+    const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=' + geminiKey;
+    const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: PROMPT_NAMES }] }], generationConfig: { responseMimeType: 'application/json', temperature: 0.4 } })
+    });
+    if (!res.ok) throw new Error(`Gemini name search failed: ${res.statusText}`);
+    const gJson = await res.json();
+    return JSON.parse(gJson.candidates[0].content.parts[0].text);
+}
+
+
+export async function onRequestPost({ request, env, params }) {
+  try {
+    const { DB, GEMINI_KEY, FIRECRAWL_API_KEY } = env; // Assumes FIRECRAWL_API_KEY
+    const { id } = params;
+    const { firmName, website } = await request.json();
+
+    if (!FIRECRAWL_API_KEY) throw new Error("Firecrawl API key not configured.");
+    await ensureContactsSourceColumn(DB);
+
+    // 1. SCOUT: Get a list of potential contacts and their likely LinkedIn URLs
+    const potentialContacts = await getPotentialContacts(firmName, website, GEMINI_KEY);
+    
+    let enrichedContacts = [];
+
+    for (const contact of potentialContacts) {
+      if (!contact.contactName || !contact.linkedInUrl) continue;
+
+      // 2. INVESTIGATE: Scrape the content of the potential URL to verify it's real
+      const pageText = await getPageContent(contact.linkedInUrl, FIRECRAWL_API_KEY);
+      
+      // If scraping fails or the page is empty, it was a fake link. Skip it.
+      if (!pageText) continue;
+
+      // 3. ANALYZE: We now have a VERIFIED link and REAL page text.
+      // Ask Gemini to extract the email from the real text.
+      const PROMPT_EXTRACT = `From the following text from a verified LinkedIn page, extract the user's email address if present. Respond with a single raw JSON object: {"email": "..."}. If no email is found, use an empty string. Text: """${pageText}"""`;
+      const extractionResult = await callGemini(PROMPT_EXTRACT, GEMINI_KEY, 0.0);
+
+      enrichedContacts.push({
+        contactName: contact.contactName,
+        designation: contact.designation,
+        email: extractionResult.email || "",
+        linkedIn: contact.linkedInUrl, // We use the URL we successfully scraped
+        contactNumber: "" // Phone number is too difficult to find reliably
+      });
     }
 
-    const gJson = await geminiRes.json();
-    
-    const textPart = gJson.candidates[0].content.parts.find(part => 'text' in part);
-    let txt = textPart ? textPart.text.trim() : '[]';
-    
-    if (txt.startsWith("```json")) {
-        txt = txt.substring(7, txt.length - 3).trim();
-    }
-    
-    const newContacts = JSON.parse(txt);
-
-    if (!Array.isArray(newContacts)) {
-        throw new Error("Gemini did not return a valid array of contacts.");
-    }
-    
     const firm = await DB.prepare("SELECT contacts_json FROM firms WHERE id = ?").bind(id).first();
     const existingContacts = JSON.parse(firm.contacts_json || '[]');
-    
-    const verifiedNewContacts = newContacts.filter(c => c.contactName && c.contactName !== "...");
+    const mergedContacts = [...existingContacts, ...enrichedContacts];
 
-    const mergedContacts = [...existingContacts, ...verifiedNewContacts];
-
-    await DB.prepare(
-      `UPDATE firms SET contacts_json = ?1, contacts_source = 'Gemini' WHERE id = ?2`
-    ).bind(JSON.stringify(mergedContacts), id).run();
+    await DB.prepare(`UPDATE firms SET contacts_json = ?1, contacts_source = 'Gemini' WHERE id = ?2`)
+      .bind(JSON.stringify(mergedContacts), id).run();
 
     return new Response(JSON.stringify({ contacts: mergedContacts }), { headers: { 'content-type': 'application/json' } });
 
@@ -106,4 +103,20 @@ Your task is to find up to two key decision-makers (e.g., CEO, Founder, Partner)
     console.error("Find Contacts Error:", e);
     return new Response(JSON.stringify({ error: String(e.message || e) }), { status: 500 });
   }
+}
+
+// Re-added the generic callGemini function for the extraction step
+async function callGemini(prompt, geminiKey, temperature = 0.0) {
+    const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=' + geminiKey;
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: { responseMimeType: 'application/json', temperature: temperature }
+        })
+    });
+    if (!response.ok) throw new Error(`Gemini extraction failed: ${response.statusText}`);
+    const gJson = await response.json();
+    return JSON.parse(gJson.candidates[0].content.parts[0].text);
 }
