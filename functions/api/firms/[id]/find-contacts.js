@@ -23,7 +23,6 @@ export async function onRequestPost({ request, env, params }) {
 
     await ensureContactsSourceColumn(DB);
 
-    // --- The Final Prompt, designed for Google Search Grounding ---
     const PROMPT = `
 You are a data researcher with live access to Google Search.
 Your task is to find up to two key decision-makers (e.g., CEO, Founder, Partner) for the company "${firmName}" (${website}).
@@ -46,17 +45,19 @@ Your task is to find up to two key decision-makers (e.g., CEO, Founder, Partner)
 ]
 `;
 
-    // --- The Correct Vertex AI Endpoint with your Project ID ---
+    // The Vertex AI Endpoint
     const PROJECT_ID = "gen-lang-client-0134744668";
     const REGION = "us-central1";
     
-    // The final, correct URL structure with the API key in the query string.
-    const url = `https://${REGION}-aiplatform.googleapis.com/v1/projects/${PROJECT_ID}/locations/${REGION}/publishers/google/models/gemini-1.5-pro-latest:generateContent?key=${GEMINI_KEY}`;
+    // [THE FIX - Part 1] The URL no longer contains the API key.
+    const url = `https://${REGION}-aiplatform.googleapis.com/v1/projects/${PROJECT_ID}/locations/${REGION}/publishers/google/models/gemini-1.5-pro-latest:generateContent`;
     
     const geminiRes = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        // [THE FIX - Part 2] The API key is sent in the correct, secure header.
+        'Authorization': `Bearer ${GEMINI_KEY}`
       },
       body: JSON.stringify({
         contents: [{ role: 'user', parts: [{ text: PROMPT }] }],
